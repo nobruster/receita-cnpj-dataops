@@ -8,7 +8,11 @@ Plataforma DataOps on-premises para os dados abertos do CNPJ (Receita Federal). 
 - **A — backbone (determinístico):** `pipeline/` + `transform/` (dbt) + `dags/` (Airflow 3) + `intelligence/` (MCP).
 - **B — Sentinel (probabilístico):** `sentinel/` (CrewAI). Pontuado contra `ops.incidents origin='chaos'` (gerado por `chaos/`).
 
-Documentos: `docs/business-requirements-document.md` (requisitos BR/RF/RNF e AC-1..AC-8), `docs/ARQUITETURA.md`, `docs/adrs/`, `docs/GUIA.md`.
+Documentos: `docs/README.md` (índice), `docs/business-requirements-document.md` (requisitos BR/RF/RNF e AC-1..AC-8), `docs/ARQUITETURA.md`, `docs/adrs/README.md`, `docs/GUIA.md`, `docs/converge/closers-review.md`.
+
+## Camada de agentes (multiferramenta)
+- `AGENTS.md` na raiz é o índice que toda ferramenta lê primeiro (Claude Code, Cursor, Copilot, Codex). É **gerado**: re-emita com `TARGET_REPO=$PWD bash .claude/skills/agents-kbs-tech-stack/scripts/emit-cross-tool.sh` depois de mexer em `.claude/agents/` ou `.claude/kb/_index.yaml`. Não edite à mão (nem `.cursor/rules/`, nem `.github/copilot-instructions.md`).
+- `prompts/` guarda os prompts das quatro passagens do Converge (P1–P4); `.claude/skills/task-spec/` gera as task-specs; `.claude/skills/agents-kbs-tech-stack/` mantém a frota e os KBs; `.claude/workflows/` traz o roteiro de construção da fase 2.
 
 ## Regras (herdadas do ws-3, adaptadas)
 - **R3 Dependência de mão única:** B lê A somente leitura. A nunca importa `sentinel`. As únicas escritas do B são `ops.diagnoses` e `/data/sentinel/`.

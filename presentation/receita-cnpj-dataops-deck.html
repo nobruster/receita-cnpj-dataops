@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>receita-cnpj-dataops — DataOps do CNPJ com um Sentinel de IA</title>
+<style>
+  :root{
+    --bg:#0b1020; --bg2:#111936; --ink:#e8ecf7; --dim:#9aa7c7; --line:#22305c;
+    --accent:#4ea3ff; --accent2:#6ee7b7; --warn:#fbbf24; --bad:#fb7185;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+  .slide{min-height:100vh;display:flex;flex-direction:column;justify-content:center;
+         padding:clamp(24px,5vw,80px);border-bottom:1px solid var(--line);position:relative}
+  .slide:nth-child(even){background:linear-gradient(180deg,var(--bg2),var(--bg))}
+  .act{font:600 12px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:18px}
+  h1{font-size:clamp(32px,6vw,64px);line-height:1.05;margin:0 0 18px;letter-spacing:-.02em}
+  h2{font-size:clamp(26px,4vw,44px);line-height:1.1;margin:0 0 20px;letter-spacing:-.015em}
+  h3{font-size:clamp(18px,2.4vw,24px);margin:28px 0 10px}
+  p{max-width:72ch;color:var(--ink)}
+  .lead{font-size:clamp(18px,2.2vw,22px);color:var(--dim);max-width:66ch}
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:26px}
+  .card{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  .card h4{margin:0 0 8px;font-size:15px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent2)}
+  .card p{margin:0;color:var(--dim);font-size:15px}
+  .big{font:700 clamp(30px,5vw,54px)/1 var(--sans);color:var(--accent2);display:block;margin-bottom:6px}
+  table{border-collapse:collapse;width:100%;margin-top:22px;font-size:15px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--accent);font-weight:600;font-size:13px;letter-spacing:.06em;text-transform:uppercase}
+  td code,p code,li code{font-family:var(--mono);font-size:.92em;background:rgba(78,163,255,.12);padding:1px 6px;border-radius:6px}
+  pre{font-family:var(--mono);font-size:14px;background:rgba(0,0,0,.35);border:1px solid var(--line);
+      border-radius:12px;padding:18px;overflow-x:auto;color:#cfe0ff}
+  ul{max-width:72ch;color:var(--dim)} li{margin:8px 0} li strong{color:var(--ink)}
+  .tag{display:inline-block;font:600 12px var(--mono);border:1px solid var(--line);border-radius:999px;
+       padding:4px 12px;margin:0 8px 8px 0;color:var(--dim)}
+  .ok{color:var(--accent2)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  .foot{position:absolute;bottom:18px;left:clamp(24px,5vw,80px);right:clamp(24px,5vw,80px);
+        display:flex;justify-content:space-between;font:500 12px var(--mono);color:#5e6c93}
+  @media (max-width:600px){ .slide{min-height:auto;padding-block:56px} .foot{position:static;margin-top:32px} table{display:block;overflow-x:auto} }
+</style>
+</head>
+<body>
+
+<section class="slide">
+  <div class="act">Formação · projeto de portfólio</div>
+  <h1>receita-cnpj-dataops</h1>
+  <p class="lead">Todos os dados abertos do CNPJ da Receita Federal, processados on-premises em Docker Desktop —
+  com um time de agentes de IA vigiando a qualidade e <em>com nota</em> pelo que acerta.</p>
+  <div style="margin-top:28px">
+    <span class="tag">Airflow 3.3</span><span class="tag">DuckDB 1.5</span><span class="tag">dbt 1.12</span>
+    <span class="tag">PostgreSQL 17</span><span class="tag">CrewAI 1.15</span><span class="tag">MCP</span>
+  </div>
+  <div class="foot"><span>Bruno Nunes</span><span>2026-09</span></div>
+</section>
+
+<section class="slide">
+  <div class="act">Ato I · o problema</div>
+  <h2>85 GB de CSV por mês, publicados sem aviso e com defeitos conhecidos</h2>
+  <div class="grid">
+    <div class="card"><h4>Volume</h4><p><span class="big">37</span>arquivos .zip por competência, ~6 GB comprimidos, mais de 80 GB de CSV e dezenas de milhões de linhas.</p></div>
+    <div class="card"><h4>Fonte</h4><p><span class="big">?</span>Um compartilhamento WebDAV que muda de endereço, cai no meio do download e publica quando quer.</p></div>
+    <div class="card"><h4>Qualidade</h4><p><span class="big">13</span>modos de falha catalogados: CNPJ inválido, data impossível, mojibake, sócio órfão, layout que muda.</p></div>
+  </div>
+  <p style="margin-top:28px">A pergunta do projeto não é "consigo carregar?" — é <strong>como eu sei que a carga deste mês está boa</strong>,
+  todo mês, sem olhar linha por linha.</p>
+</section>
+
+<section class="slide">
+  <div class="act">Ato II · a costura</div>
+  <h2>Dois componentes, uma dependência de mão única</h2>
+  <div class="grid">
+    <div class="card"><h4>A — backbone determinístico</h4><p>Airflow orquestra, DuckDB processa, dbt classifica, Postgres publica. Funciona sozinho, sem nenhuma IA. É o que precisa estar certo.</p></div>
+    <div class="card"><h4>B — Sentinel probabilístico</h4><p>Um crew hierárquico (CrewAI) lê os rastros de A e diagnostica o que deu errado. Fase 2 — nunca no caminho crítico.</p></div>
+  </div>
+  <h3>Regra R3 — mão única</h3>
+  <p>B lê A <strong>somente leitura</strong> por cinco interfaces. A nunca importa B. As únicas escritas de B
+  são o próprio diagnóstico (<code>ops.diagnoses</code>) e arquivos em <code>/data/sentinel/</code>.
+  Se o Sentinel sumir, o pipeline não percebe.</p>
+</section>
+
+<section class="slide">
+  <div class="act">Ato III · o caminho do dado</div>
+  <h2>Onze tarefas, um escritor</h2>
+<pre>descobrir → baixar → carregar_raw → dbt_bronze → dbt_silver → dbt_gold → qualidade
+          → arquivar_historico → publicar_postgres → limpar_landing → concluir</pre>
+  <table>
+    <tr><th>Camada</th><th>Materialização</th><th>Contrato</th></tr>
+    <tr><td><code>raw</code></td><td>tabela, 1 competência</td><td>Fiel ao arquivo. Tudo VARCHAR, nada corrigido. Mudança de layout barra antes da carga.</td></tr>
+    <tr><td><code>bronze</code></td><td>view</td><td>Nomes estáveis, datas e dinheiro tipados com <code>TRY_*</code>.</td></tr>
+    <tr><td><code>silver</code></td><td>classificado + view + rejects</td><td>100% das linhas classificadas; <code>reject_rule</code> = a chave da falha.</td></tr>
+    <tr><td><code>gold</code></td><td>tabela</td><td>Só linhas aceitas. Um teste dbt barra qualquer vazamento.</td></tr>
+  </table>
+  <p style="margin-top:20px">DuckDB aceita <strong>um escritor</strong>: toda tarefa que escreve passa por um pool de uma vaga,
+  e leitores abrem só-leitura por chamada — esperando a trava em vez de derrubar a DAG.</p>
+</section>
+
+<section class="slide">
+  <div class="act">Ato IV · a decisão que muda tudo</div>
+  <h2>Quarentena, não descarte</h2>
+  <p class="lead">Linha ruim não some e não contamina: ela é classificada, fica visível e vira métrica.</p>
+  <table>
+    <tr><th>reject_rule</th><th>Regra</th></tr>
+    <tr><td><code>invalid_cnpj</code></td><td>Forma <code>[0-9A-Z]{8}</code> e DV módulo 11 <strong>alfanumérico</strong> (a regra nova da Receita).</td></tr>
+    <tr><td><code>duplicate_key</code></td><td>2ª ocorrência em diante da chave — a primeira segue.</td></tr>
+    <tr><td><code>invalid_date</code></td><td>Data impossível ou fora de 1900..hoje (<code>00000000</code> é nulo, não defeito).</td></tr>
+    <tr><td><code>encoding_mojibake</code></td><td>UTF-8 lido como latin-1 — o clássico <span class="bad">Ã§</span>.</td></tr>
+    <tr><td><code>orphan_socio</code></td><td>Sócio apontando para empresa que não existe no arquivo.</td></tr>
+  </table>
+  <p style="margin-top:20px">Órfão de domínio publicado (CNAE, município, natureza) <strong>não</strong> é rejeitado: vira flag e métrica —
+  alguns são defeitos conhecidos da própria fonte.</p>
+</section>
+
+<section class="slide">
+  <div class="act">Ato V · como se prova</div>
+  <h2>Critérios de aceite medidos, não afirmados</h2>
+  <table>
+    <tr><th>AC</th><th>O que mede</th><th>Estado</th></tr>
+    <tr><td>AC-1</td><td>37/37 arquivos e erro de parsing ≤ 0,001%</td><td class="ok">PASS</td></tr>
+    <tr><td>AC-2</td><td>Competência utilizável em ≤ 4 h com arquivos locais</td><td class="ok">PASS</td></tr>
+    <tr><td>AC-3</td><td>≤ 24 h da detecção ao dado utilizável</td><td class="ok">PASS</td></tr>
+    <tr><td>AC-4</td><td>Zero vazamento de quarentena para o gold</td><td class="ok">PASS</td></tr>
+    <tr><td>AC-5</td><td>Consulta curada p95 ≤ 5 s</td><td class="ok">PASS</td></tr>
+    <tr><td>AC-6</td><td>Reprocessar a mesma competência dá contagens idênticas</td><td class="ok">PASS</td></tr>
+    <tr><td>AC-7</td><td>Toda falha simulada vira alerta</td><td class="ok">13 falhas + cascata</td></tr>
+    <tr><td>AC-8</td><td>Histórico de 12 meses comparável</td><td class="ok">PASS</td></tr>
+    <tr><td>F2-1</td><td>Nota média do Sentinel ≥ 0,8</td><td class="warn">fase 2</td></tr>
+  </table>
+  <p style="margin-top:20px"><code>python -m pipeline.evals</code> imprime essa tabela contra o banco de verdade — nenhum número é digitado à mão.</p>
+</section>
+
+<section class="slide">
+  <div class="act">Ato VI · o Sentinel</div>
+  <h2>Um time que é avaliado, não elogiado</h2>
+  <div class="grid">
+    <div class="card"><h4>Chaos</h4><p>Um injetor escreve defeitos numa amostra sintética e registra a <strong>verdade de referência</strong> num ledger que as ferramentas do crew não podem ler.</p></div>
+    <div class="card"><h4>Crew</h4><p>Gerente delega a um analista de logs, um perfilador de dados, um engenheiro (que só <em>propõe</em> patch) e um comandante de incidente.</p></div>
+    <div class="card"><h4>Nota</h4><p>Exato 1,0 · sinônimo 0,7 · cascata proporcional · erro 0 · <strong>no-run</strong> quando a API cai. Evidência pontua à parte.</p></div>
+  </div>
+  <p style="margin-top:26px">Sem LLM configurado, um Flow determinístico faz o mesmo roteamento — o sistema não depende de nuvem para funcionar,
+  só para explicar melhor.</p>
+</section>
+
+<section class="slide">
+  <div class="act">Ato VII · o método</div>
+  <h2>Converge: quatro passagens antes da primeira linha de código</h2>
+  <table>
+    <tr><th>Passo</th><th>Portão</th><th>Artefato</th></tr>
+    <tr><td>P1 Intent</td><td>Problema confirmado, <strong>sem tecnologia</strong></td><td><code>docs/engineering-brief.pdf</code></td></tr>
+    <tr><td>P2 Structure</td><td>Cada afirmação aterrada no código real</td><td><code>docs/tech-spec.md</code></td></tr>
+    <tr><td>P3 Decomposition</td><td>Dois planos na costura A/B</td><td><code>sketch/*.md</code></td></tr>
+    <tr><td>P4 Consensus</td><td>Outra engine ataca; toda objeção vira FIX ou ACEITO</td><td><code>docs/converge/p4-consensus.md</code></td></tr>
+    <tr><td>Closers</td><td>Reviewer independente; achado sem destino bloqueia</td><td><code>docs/converge/closers-review.md</code></td></tr>
+  </table>
+  <p style="margin-top:22px">O reviewer independente achou 16 defeitos — leitura de arquivo por SQL, leitor derrubando a DAG,
+  publicação não atômica, dado pessoal indo longe demais para o LLM. Todos corrigidos <strong>com teste de regressão</strong>.</p>
+</section>
+
+<section class="slide">
+  <div class="act">Encerramento</div>
+  <h2>O que fica</h2>
+  <ul>
+    <li><strong>Um pipeline que se explica.</strong> Cada competência tem status, tempos, métricas e incidentes num ledger — não em memória de quem rodou.</li>
+    <li><strong>Defeito visível é defeito gerenciável.</strong> Quarentena transforma "o dado tá estranho" em contagem por regra, mês a mês.</li>
+    <li><strong>IA com nota.</strong> O componente probabilístico só entra em produção quando prova, contra verdade conhecida, que acerta.</li>
+    <li><strong>Rigor que sobrevive ao autor.</strong> ADRs, task-specs com evals e um gate de revisão — para que a decisão de hoje não seja reaberta no escuro amanhã.</li>
+  </ul>
+  <p style="margin-top:26px"><code>.\cnpj.ps1 up</code> → <code>rodar</code> → <code>status</code> → <code>evals</code></p>
+  <div class="foot"><span>receita-cnpj-dataops</span><span>docs/GUIA.md · docs/ARQUITETURA.md</span></div>
+</section>
+
+</body>
+</html>

@@ -4,7 +4,9 @@ Plataforma **DataOps on-premises** para processar **todos os arquivos abertos do
 
 Adaptação da arquitetura de [owshq-mec/ws-3-crew-ai-multi-agent](https://github.com/owshq-mec/ws-3-crew-ai-multi-agent) para arquivos da Receita, com **Airflow + DuckDB** no lugar de Dagster + Postgres-fonte.
 
-> **Documentos:** [BRD](docs/business-requirements-document.md) · [Engineering brief](docs/engineering-brief.md) · [Tech spec](docs/tech-spec.md) · [Planos](sketch/) · [Consenso P4](docs/converge/p4-consensus.md) · [Tasks](tasks/) · [Guia passo a passo](docs/GUIA.md) · [Arquitetura](docs/ARQUITETURA.md) · [ADRs](docs/adrs/)
+> **Documentos:** [índice de docs](docs/README.md) · [BRD](docs/business-requirements-document.md) · [Engineering brief](docs/engineering-brief.md) · [Tech spec](docs/tech-spec.md) · [Planos](sketch/) · [Consenso P4](docs/converge/p4-consensus.md) · [Gate dos closers](docs/converge/closers-review.md) · [Tasks](tasks/) · [Guia passo a passo](docs/GUIA.md) · [Arquitetura](docs/ARQUITETURA.md) · [ADRs](docs/adrs/README.md)
+>
+> **Método e agentes:** [prompts do Converge](prompts/) · [AGENTS.md](AGENTS.md) (índice multiferramenta) · [frota e KBs](.claude/) · [deck](presentation/)
 >
 > **Escopo v1** (ADR-0003): backbone. Sentinel e MCP são **fase 2** (`docker compose --profile fase2`).
 
