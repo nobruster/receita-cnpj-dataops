@@ -15,6 +15,7 @@
     sentinel                Roda o Sentinel agora sobre os incidentes pendentes
     evals [reprocessar]     Mede os critérios de aceite AC-1..AC-8 (reprocessar = também o AC-6)
     consulta "SQL"          SELECT somente leitura no DuckDB (gold/silver)
+    diferenca A B [raiz]    O que mudou entre duas competências do histórico (AC-8)
     psql                    Abre o psql no banco da plataforma
     limpar-teste            Apaga amostras, warehouse e ledger (antes da primeira carga real)
 #>
@@ -53,8 +54,8 @@ switch ($Comando) {
     "rodar" {
         docker compose exec airflow-apiserver airflow dags unpause receita_cnpj_mensal
         if ($Arg1) {
-            $conf = '{"competencia": "' + $Arg1 + '"}'
-            docker compose exec airflow-apiserver airflow dags trigger receita_cnpj_mensal --conf $conf
+            # JSON montado DENTRO do container: sem aspas aninhadas, funciona no PowerShell 5.1 e 7
+            docker compose exec -e "COMP=$Arg1" airflow-apiserver python -c "import json,os,subprocess; subprocess.run(['airflow','dags','trigger','receita_cnpj_mensal','--conf',json.dumps({'competencia':os.environ['COMP']})],check=True)"
         } else {
             docker compose exec airflow-apiserver airflow dags trigger receita_cnpj_mensal
         }
@@ -77,6 +78,10 @@ switch ($Comando) {
     "consulta" {
         if (-not $Arg1) { throw 'uso: .\cnpj.ps1 consulta "SELECT * FROM gold.gold_resumo_competencia"' }
         docker compose exec -T airflow-scheduler python -m intelligence.sql_guard $Arg1
+    }
+    "diferenca" {
+        if (-not $Arg1 -or -not $Arg2) { throw "uso: .\cnpj.ps1 diferenca 2026-07 2026-08 [cnpj_basico]" }
+        docker compose exec -T airflow-scheduler python -m intelligence.intents diferenca $Arg1 $Arg2 $args
     }
     "psql" {
         $u = Get-EnvValue "PG_USER" "cnpj"; $d = Get-EnvValue "PG_DB" "cnpj"

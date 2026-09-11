@@ -20,8 +20,8 @@ from pathlib import Path
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
-from intelligence.sql_guard import MAX_ROWS, run_guarded_select
 from intelligence.sql_guard import open_ro as _ro
+from intelligence.sql_guard import run_guarded_select
 from pipeline import ops
 from pipeline.config import get_settings
 
@@ -117,16 +117,25 @@ class _Sql(BaseModel):
     sql: str = Field(..., description="Um único SELECT sobre silver.silver_*, gold.gold_* ou raw.raw_load_log")
 
 
+# Colunas de dado pessoal que NUNCA vão para o LLM (soberania/LGPD — achado 11 do reviewer).
+PII_COLUMNS: tuple[str, ...] = (
+    "correio_eletronico", "ddd_1", "telefone_1", "ddd_2", "telefone_2", "ddd_fax", "fax", "nome_socio",
+    "cnpj_cpf_socio", "representante_legal", "nome_representante", "logradouro", "numero", "complemento",
+)
+LLM_MAX_ROWS = 20
+
+
 class QueryWarehouse(BaseTool):
     name: str = "query_warehouse"
     description: str = (
         "Executa UM SELECT somente-leitura no DuckDB (tabelas silver.silver_*, gold.gold_*, raw.raw_load_log). "
-        f"Devolve no máximo {MAX_ROWS} linhas. Prefira agregações (count, group by)."
+        f"Devolve no máximo {LLM_MAX_ROWS} linhas; colunas de contato/sócio e SELECT * são bloqueados. "
+        "Prefira agregações (count, group by)."
     )
     args_schema: type[BaseModel] = _Sql
 
     def _run(self, sql: str) -> str:
-        return run_guarded_select(sql)
+        return run_guarded_select(sql, max_rows=LLM_MAX_ROWS, deny_columns=PII_COLUMNS)
 
 
 class ReadQualityMetrics(BaseTool):

@@ -130,5 +130,5 @@ def run(con: duckdb.DuckDBPyConnection, competencia: str) -> list[int]:
     ids = []
     for f in findings:
         log.warning("DQ_FINDING key=%s entidade=%s %s", f.failure_key, f.entidade, f.detail)
-        ids.append(ops.open_incident(f.failure_key, "monitor", competencia, f.detail, f.evidence_surface))
+        ids.append(ops.open_incident_once(f.failure_key, "monitor", competencia, f.detail, f.evidence_surface))
     return ids

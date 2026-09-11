@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS ops.competencias (
 
 ALTER TABLE ops.competencias ADD COLUMN IF NOT EXISTS detectado_em TIMESTAMPTZ;
 ALTER TABLE ops.competencias ADD COLUMN IF NOT EXISTS processamento_iniciado_em TIMESTAMPTZ;
+ALTER TABLE ops.competencias ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS ops.dq_metrics (
     competencia TEXT NOT NULL,
@@ -99,27 +100,36 @@ def ensure_schema(settings: Settings | None = None) -> None:
 
 # --- competências -----------------------------------------------------------
 
+FINAL_STATUSES: tuple[str, ...] = ("publicada", "falhou")
+
+
 def set_status(competencia: str, status: str, detalhe: str = "", **extra: object) -> None:
+    """Upsert do status; ``atualizado_em`` sempre avança (o gatilho do Sentinel depende disso)."""
     cols = {"status": status, "detalhe": detalhe, **extra}
     sets = ", ".join(f"{k} = EXCLUDED.{k}" for k in cols)
     names = ", ".join(cols)
     marks = ", ".join(["%s"] * len(cols))
     with session() as conn:
         conn.execute(
-            f"INSERT INTO ops.competencias (competencia, {names}) VALUES (%s, {marks}) "
-            f"ON CONFLICT (competencia) DO UPDATE SET {sets}",
+            f"INSERT INTO ops.competencias (competencia, {names}, atualizado_em) VALUES (%s, {marks}, now()) "
+            f"ON CONFLICT (competencia) DO UPDATE SET {sets}, atualizado_em = now()",
             [competencia, *cols.values()],
         )
 
 
-def mark_detected(competencia: str) -> None:
-    """Grava a hora da PRIMEIRA detecção (âncora do AC-3); reexecuções não a movem."""
+def mark_detected(competencia: str, reset: bool = False) -> None:
+    """Marca a competência como EM ANDAMENTO (status ``descoberta``) e grava a hora da detecção.
+
+    ``detectado_em`` é a âncora do AC-3: a primeira detecção vale, exceto num reprocessamento
+    forçado (``reset=True``), que é um novo evento de detecção.
+    """
+    novo = "EXCLUDED.detectado_em" if reset else "COALESCE(ops.competencias.detectado_em, EXCLUDED.detectado_em)"
     with session() as conn:
         conn.execute(
-            "INSERT INTO ops.competencias (competencia, status, detalhe, detectado_em) "
-            "VALUES (%s, 'descoberta', 'nova competência publicada', now()) "
-            "ON CONFLICT (competencia) DO UPDATE SET "
-            "detectado_em = COALESCE(ops.competencias.detectado_em, EXCLUDED.detectado_em)",
+            "INSERT INTO ops.competencias (competencia, status, detalhe, detectado_em, atualizado_em) "
+            "VALUES (%s, 'descoberta', 'competência em processamento', now(), now()) "
+            "ON CONFLICT (competencia) DO UPDATE SET status = 'descoberta', "
+            f"detalhe = 'competência em processamento', detectado_em = {novo}, atualizado_em = now()",
             [competencia],
         )
 
@@ -184,6 +194,24 @@ class Incident:
     detected_at: datetime
 
 
+UNDIAGNOSED = "NOT EXISTS (SELECT 1 FROM ops.diagnoses d WHERE i.incident_id = ANY(d.incident_ids))"
+
+
+def open_incident_once(failure_key: str, origin: str, competencia: str | None, detail: str = "",
+                       evidence_surface: str = "") -> int:
+    """Como :func:`open_incident`, mas reaproveita um incidente igual ainda não diagnosticado
+    (reexecuções não duplicam alertas — achado 14 do reviewer)."""
+    with session() as conn:
+        row = conn.execute(
+            f"SELECT incident_id FROM ops.incidents i WHERE failure_key = %s AND origin = %s "
+            f"AND competencia IS NOT DISTINCT FROM %s AND {UNDIAGNOSED} LIMIT 1",
+            [failure_key, origin, competencia],
+        ).fetchone()
+    if row:
+        return int(row["incident_id"])
+    return open_incident(failure_key, origin, competencia, detail, evidence_surface)
+
+
 def open_incident(failure_key: str, origin: str, competencia: str | None, detail: str = "",
                   evidence_surface: str = "") -> int:
     with session() as conn:
@@ -208,10 +236,3 @@ def incidents_since(since: datetime, origins: tuple[str, ...] | None = None) -> 
                  r["evidence_surface"], r["detected_at"])
         for r in rows
     ]
-
-
-def mark_incidents(ids: list[int], status: str) -> None:
-    if not ids:
-        return
-    with session() as conn:
-        conn.execute("UPDATE ops.incidents SET status = %s WHERE incident_id = ANY(%s)", [status, ids])

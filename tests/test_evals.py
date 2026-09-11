@@ -11,7 +11,7 @@ from chaos.sample import generate
 from pipeline import evals, steps
 from pipeline.config import get_settings
 
-COMP = "2026-04"
+COMP = "2027-01"
 
 
 @pytest.fixture(scope="module")

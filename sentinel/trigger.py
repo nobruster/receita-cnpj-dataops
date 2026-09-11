@@ -48,22 +48,33 @@ class CaseResult:
 
 
 def pending_cases() -> list[str]:
+    """Competências com incidentes ainda não diagnosticados cujo ciclo JÁ TERMINOU depois deles.
+
+    ``atualizado_em >= max(detected_at)`` evita diagnosticar um caso em andamento (ex.: falha
+    injetada numa competência publicada que ainda vai ser reprocessada — achado 3 do reviewer).
+    O Sentinel não escreve em ``ops.incidents`` (R3): "diagnosticado" = citado em ``ops.diagnoses``.
+    """
     with ops.session() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT i.competencia FROM ops.incidents i "
-            "JOIN ops.competencias c ON c.competencia = i.competencia "
-            "WHERE i.status = 'open' AND c.status IN ('publicada', 'falhou') ORDER BY 1"
+            "SELECT i.competencia FROM ops.incidents i JOIN ops.competencias c ON c.competencia = i.competencia "
+            f"WHERE {ops.UNDIAGNOSED} AND c.status = ANY(%s) GROUP BY i.competencia, c.atualizado_em "
+            "HAVING c.atualizado_em >= max(i.detected_at) ORDER BY 1", [list(ops.FINAL_STATUSES)]
         ).fetchall()
     return [r["competencia"] for r in rows]
 
 
-def truth_keys(competencia: str) -> list[str]:
+def _undiagnosed(competencia: str, origin: str | None = None) -> list[dict]:
+    q = f"SELECT incident_id, failure_key FROM ops.incidents i WHERE competencia = %s AND {ops.UNDIAGNOSED}"
+    params: list[object] = [competencia]
+    if origin:
+        q += " AND origin = %s"
+        params.append(origin)
     with ops.session() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT failure_key FROM ops.incidents WHERE competencia = %s AND origin = 'chaos' "
-            "AND status = 'open'", [competencia]
-        ).fetchall()
-    return sorted(r["failure_key"] for r in rows)
+        return conn.execute(q, params).fetchall()
+
+
+def truth_keys(competencia: str) -> list[str]:
+    return sorted({r["failure_key"] for r in _undiagnosed(competencia, "chaos")})
 
 
 def run_crew(competencia: str, key_hint: str, llm_override: Any | None = None) -> Diagnosis | None:
@@ -97,10 +108,8 @@ def run_case(competencia: str, llm_override: Any | None = None) -> CaseResult:
 
 
 def _record(res: CaseResult) -> None:
+    ids = [r["incident_id"] for r in _undiagnosed(res.competencia)]
     with ops.session() as conn:
-        ids = [r["incident_id"] for r in conn.execute(
-            "SELECT incident_id FROM ops.incidents WHERE competencia = %s AND status = 'open'",
-            [res.competencia]).fetchall()]
         d = res.diagnosis
         conn.execute(
             "INSERT INTO ops.diagnoses (incident_ids, route, failure_key, sub_failures, evidence_surface, "
@@ -110,7 +119,6 @@ def _record(res: CaseResult) -> None:
              d.evidence_surface if d else None, d.confidence if d else None, d.summary if d else None,
              res.score.tier, res.score.match, res.score.evidence],
         )
-    ops.mark_incidents(ids, "diagnosed")
 
 
 def run_pending() -> list[CaseResult]:

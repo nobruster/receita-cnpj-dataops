@@ -4,37 +4,37 @@ schema_version: 1
 tasks:
 - id: T-20260911-01-compose-fase2
   path: tasks/T-20260911-01-compose-fase2.md
-  status: ready
+  status: done
   effort: S
-  last_validated: 2026-09-11T21:02:50Z
+  last_validated: 2026-09-11T22:07:56Z
   validator_version: 2
 - id: T-20260911-02-tempos-e-fonte
   path: tasks/T-20260911-02-tempos-e-fonte.md
-  status: ready
+  status: done
   effort: M
-  last_validated: 2026-09-11T21:02:50Z
+  last_validated: 2026-09-11T22:07:57Z
   validator_version: 2
 - id: T-20260911-03-historico-parquet
   path: tasks/T-20260911-03-historico-parquet.md
-  status: ready
+  status: done
   effort: M
-  last_validated: 2026-09-11T21:02:51Z
+  last_validated: 2026-09-11T22:07:57Z
   validator_version: 2
 - id: T-20260911-04-eval-ac6
   path: tasks/T-20260911-04-eval-ac6.md
-  status: ready
+  status: done
   effort: S
-  last_validated: 2026-09-11T21:02:51Z
+  last_validated: 2026-09-11T22:07:57Z
   validator_version: 2
 - id: T-20260911-05-endurecimento
   path: tasks/T-20260911-05-endurecimento.md
-  status: ready
+  status: done
   effort: S
-  last_validated: 2026-09-11T21:02:51Z
+  last_validated: 2026-09-11T22:07:58Z
   validator_version: 2
 - id: T-20260911-06-closers-gate
   path: tasks/T-20260911-06-closers-gate.md
-  status: ready
+  status: done
   effort: M
-  last_validated: 2026-09-11T21:02:52Z
+  last_validated: 2026-09-11T22:07:58Z
   validator_version: 2

@@ -80,3 +80,18 @@ def test_download_retoma_do_parcial(settings, tmp_path):
     out = webdav.download_file("2026-08", remote, tmp_path, settings)
     assert out.read_bytes() == PAYLOAD
     assert not (tmp_path / "Cnaes.zip.part").exists()
+
+
+def test_part_de_outra_versao_e_descartado(settings, tmp_path):
+    remote = webdav.list_files("2026-08", settings)[0]
+    (tmp_path / "Cnaes.zip.part").write_bytes(b"lixo de outra versao" * 10)
+    (tmp_path / "Cnaes.zip.part.etag").write_text("etag-antigo")
+    out = webdav.download_file("2026-08", remote, tmp_path, settings)
+    assert out.read_bytes() == PAYLOAD
+
+
+def test_part_corrompido_do_mesmo_tamanho_e_rebaixado(settings, tmp_path):
+    remote = webdav.list_files("2026-08", settings)[0]
+    (tmp_path / "Cnaes.zip.part").write_bytes(b"\0" * len(PAYLOAD))  # tamanho certo, CRC errado
+    out = webdav.download_file("2026-08", remote, tmp_path, settings)
+    assert out.read_bytes() == PAYLOAD

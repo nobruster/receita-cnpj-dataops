@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from pathlib import Path
 
 import duckdb
@@ -26,6 +27,9 @@ log = logging.getLogger("pipeline.warehouse")
 MEMORY_SHARE = 0.60
 _UNITS = {"KB": 1024, "KIB": 1024, "MB": 1024**2, "MIB": 1024**2, "GB": 1024**3, "GIB": 1024**3,
           "TB": 1024**4, "TIB": 1024**4, "B": 1}
+
+
+_AVISADOS: set[tuple[str, int]] = set()
 
 
 class WarehouseBusyError(RuntimeError):
@@ -61,6 +65,9 @@ def effective_memory_limit(configured: str, available: int | None = None) -> str
     if not total or pedido <= total * MEMORY_SHARE:
         return configured
     teto_mb = int(total * MEMORY_SHARE / 1024**2)
+    if (configured, teto_mb) in _AVISADOS:
+        return f"{teto_mb}MB"
+    _AVISADOS.add((configured, teto_mb))
     log.warning("DUCKDB_MEMORY_LIMIT=%s excede 60%% da memória do container (%.1f GB); usando %dMB",
                 configured, total / 1024**3, teto_mb)
     return f"{teto_mb}MB"
@@ -73,25 +80,77 @@ def _pragmas(con: duckdb.DuckDBPyConnection, s: Settings) -> None:
     con.execute("SET preserve_insertion_order = false")  # menos memória em cargas grandes
 
 
-def connect_rw(settings: Settings | None = None) -> duckdb.DuckDBPyConnection:
+def connect_rw(settings: Settings | None = None, wait_s: int | None = None) -> duckdb.DuckDBPyConnection:
+    """Abre para escrita. Se um leitor ou outro escritor segura o arquivo, espera até
+    ``duckdb_lock_wait_s`` (leitores abrem e fecham rápido) antes de desistir com mensagem clara."""
     s = settings or get_settings()
     s.ensure_dirs()
-    try:
-        con = duckdb.connect(str(s.warehouse_path))
-    except duckdb.IOException as exc:
-        raise WarehouseBusyError(
-            f"outro processo está escrevendo em {s.warehouse_path} (a DAG está rodando?). "
-            "Espere terminar: o DuckDB aceita um único escritor."
-        ) from exc
+    limite = s.duckdb_lock_wait_s if wait_s is None else wait_s
+    inicio = time.monotonic()
+    while True:
+        try:
+            con = duckdb.connect(str(s.warehouse_path))
+            break
+        except duckdb.IOException as exc:
+            if time.monotonic() - inicio >= limite:
+                raise WarehouseBusyError(
+                    f"outro processo segura {s.warehouse_path} há mais de {limite}s (a DAG está rodando?). "
+                    "Espere terminar: o DuckDB aceita um único escritor."
+                ) from exc
+            log.info("warehouse ocupado; nova tentativa em 5s")
+            time.sleep(min(5, max(0.5, limite / 10)))
     _pragmas(con, s)
     return con
 
 
 def connect_ro(settings: Settings | None = None) -> duckdb.DuckDBPyConnection:
+    """Somente leitura, SEM acesso a arquivos externos e com configuração travada: nem um SQL
+    injetado consegue ler ``/proc``, ``.env`` ou CSVs do container (achado 1 do reviewer)."""
     s = settings or get_settings()
-    con = duckdb.connect(str(s.warehouse_path), read_only=True)
-    con.execute(f"SET memory_limit = '{effective_memory_limit(s.duckdb_memory_limit)}'")
-    con.execute(f"SET threads = {int(s.duckdb_threads)}")
+    return duckdb.connect(str(s.warehouse_path), read_only=True, config={
+        "enable_external_access": False,
+        "memory_limit": effective_memory_limit(s.duckdb_memory_limit),
+        "threads": int(s.duckdb_threads),
+        "lock_configuration": True,
+    })
+
+
+MASKED_SCHEMAS = ("silver", "gold", "raw")
+
+
+def connect_ro_masked(deny_columns: tuple[str, ...], settings: Settings | None = None) -> duckdb.DuckDBPyConnection:
+    """Leitura para o LLM: banco em memória com o warehouse anexado só-leitura e, por cima,
+    views ``schema.tabela`` SEM as colunas negadas. Nem ``SELECT t FROM gold.x t`` (a linha
+    inteira como STRUCT) nem ``to_json``/``COLUMNS()`` alcançam dado pessoal: a coluna não
+    existe na view. Depois do ATTACH, acesso externo é desligado e a configuração travada."""
+    s = settings or get_settings()
+    con = duckdb.connect(":memory:", config={
+        "memory_limit": effective_memory_limit(s.duckdb_memory_limit),
+        "threads": int(s.duckdb_threads),
+    })
+    alias = s.warehouse_path.stem  # as views do dbt citam o catálogo pelo nome do arquivo ("cnpj")
+    try:
+        con.execute(f"ATTACH '{s.warehouse_path.as_posix()}' AS \"{alias}\" (READ_ONLY)")
+        negadas = {c.lower() for c in deny_columns}
+        cols: dict[tuple[str, str], list[str]] = {}
+        for schema, table, col in con.execute(
+            "SELECT table_schema, table_name, column_name FROM information_schema.columns "
+            "WHERE table_catalog = ? AND table_schema IN ('silver', 'gold', 'raw') "
+            "ORDER BY table_schema, table_name, ordinal_position", [alias]
+        ).fetchall():
+            cols.setdefault((schema, table), []).append(col)
+        for schema in MASKED_SCHEMAS:
+            con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        for (schema, table), names in cols.items():
+            visiveis = [f'"{c}"' for c in names if c.lower() not in negadas]
+            if visiveis:
+                con.execute(f'CREATE VIEW {schema}."{table}" AS SELECT {", ".join(visiveis)} '
+                            f'FROM "{alias}".{schema}."{table}"')
+        con.execute("SET enable_external_access = false")
+        con.execute("SET lock_configuration = true")
+    except Exception:
+        con.close()
+        raise
     return con
 
 

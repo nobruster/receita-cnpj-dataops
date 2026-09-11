@@ -42,6 +42,10 @@ class SourceUnavailableError(PipelineFailure):
     key = "source_unavailable"
 
 
+class DbtFailure(PipelineFailure):
+    key = "dbt_failure"
+
+
 def failure_line(key: str, **fields: object) -> str:
     extra = " ".join(f"{k}={str(v).replace(' ', '_')}" for k, v in fields.items())
     return f"PIPELINE_FAILURE key={key} {extra}".strip()

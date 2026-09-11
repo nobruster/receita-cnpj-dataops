@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # --- DuckDB (motor de processamento) ---------------------------------------
     duckdb_memory_limit: str = "8GB"
     duckdb_threads: int = 4
+    duckdb_lock_wait_s: int = 600  # escritor espera leitores/escritores soltarem o arquivo
 
     # --- PostgreSQL (camada de consumo + ledger de incidentes) ----------------
     pg_host: str = "postgres"
@@ -52,7 +53,7 @@ class Settings(BaseSettings):
     dq_volume_drop_pct: float = 5.0  # queda de linhas vs competência anterior
     dq_reject_rate_pct: float = 0.5  # % de linhas em *_rejects por entidade
     dq_stale_days: int = 45  # dias sem nova competência => stale_release
-    landing_retention: int = 2  # competências de zips mantidas no landing (~6 GB cada)
+    landing_retention: int = 2  # competências de zips mantidas no landing (~6 GB cada; mínimo 1)
 
     # --- Sentinel (LLM configurável; padrão OpenAI via OPENAI_API_KEY) ---------
     # Tiering herdado do ws-3: gerente num modelo mais forte, especialistas no

@@ -12,8 +12,9 @@ from typing import Any
 
 import duckdb
 
+from pipeline.config import get_settings
 from pipeline.receita import cnpj as cnpjlib
-from pipeline.warehouse import connect_ro
+from pipeline.warehouse import connect_ro, effective_memory_limit
 
 MAX_LIMIT = 200
 
@@ -150,7 +151,10 @@ def diferenca_competencias(anterior: str, atual: str, cnpj_basico: str | None = 
         filtro = " AND x.cnpj_basico = ?"
         params = [cnpjlib.normalize(cnpj_basico)[:8]]
     chave_socio = "x.cnpj_basico, x.nome_socio, x.cnpj_cpf_socio, x.qualificacao_socio"
-    con = duckdb.connect()
+    s = get_settings()
+    con = duckdb.connect(config={"memory_limit": effective_memory_limit(s.duckdb_memory_limit),
+                                 "temp_directory": s.duckdb_temp_dir.as_posix(),
+                                 "threads": int(s.duckdb_threads)})
     try:
         def q(sql: str) -> list[dict[str, Any]]:
             cur = con.execute(sql, params)
@@ -173,3 +177,14 @@ def diferenca_competencias(anterior: str, atual: str, cnpj_basico: str | None = 
         con.close()
     return {"anterior": anterior, "atual": atual, "mudancas_situacao": mudancas, "estabelecimentos_novos": novos,
             "socios_entraram": entradas, "socios_sairam": saidas}
+
+
+if __name__ == "__main__":  # CLI mínima: python -m intelligence.intents diferenca 2026-07 2026-08 [raiz]
+    import json
+    import sys
+
+    if len(sys.argv) >= 4 and sys.argv[1] == "diferenca":
+        res = diferenca_competencias(sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else None)
+        print(json.dumps(res, ensure_ascii=False, default=str, indent=2))
+    else:
+        print("uso: python -m intelligence.intents diferenca AAAA-MM AAAA-MM [cnpj_basico]")

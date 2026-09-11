@@ -82,7 +82,7 @@ services:
       PG_PASSWORD: ${PG_PASSWORD}
       PG_DB: ${PG_DB}
     ports:
-      - "${PG_PORT_HOST:-5433}:5432"
+      - "127.0.0.1:${PG_PORT_HOST:-5433}:5432"   # só na máquina local (achado 10)
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/01-init.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
@@ -101,7 +101,7 @@ services:
       - |
         set -e
         mkdir -p /data/landing /data/work /data/warehouse /data/logs /data/dbt /data/sentinel /opt/airflow/logs
-        chown -R "${AIRFLOW_UID:-50000}:0" /data /opt/airflow/logs
+        chown -R "${AIRFLOW_UID:-50000}:0" /data /opt/airflow/logs || echo "aviso: chown falhou (bind mount do Windows?) - seguindo"
         /entrypoint airflow version
     environment:
       <<: *airflow-env
@@ -130,7 +130,7 @@ services:
     command: api-server
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
       interval: 30s
@@ -178,7 +178,7 @@ services:
     command: ["python", "-m", "intelligence.server", "--http"]
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"   # MCP sem autenticação: nunca expor na rede
 
   ollama:
     image: ollama/ollama:latest
@@ -187,7 +187,7 @@ services:
     volumes:
       - ollama:/root/.ollama
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
 
 volumes:
   pgdata:

@@ -1,7 +1,7 @@
 ---
 id: T-20260911-03-historico-parquet
 title: Arquivo histórico Parquet de 12 meses (G1/AC-8)
-status: ready
+status: done
 format_version: 2
 effort: M
 budget_iterations: 15
@@ -26,9 +26,9 @@ security_class: (none)
 source_action_item: (none)
 linear_ref: (none)
 execution_backend: any
-signed_off: false
-signed_off_by: (none)
-signed_off_at: (none)
+signed_off: true
+signed_off_by: closers-gate
+signed_off_at: 2026-09-11T00:00:00Z
 ---
 
 # Arquivo histórico Parquet de 12 meses (G1/AC-8)

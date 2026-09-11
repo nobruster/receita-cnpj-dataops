@@ -28,10 +28,10 @@ def _processa(comp: str) -> None:
 @pytest.fixture(scope="module")
 def dois_meses(pg):
     s = get_settings()
-    for comp in ("2026-05", "2026-06"):
+    for comp in ("2027-02", "2027-03"):
         shutil.rmtree(s.landing_dir / comp, ignore_errors=True)
         generate(comp, s.landing_dir, 600, seed=11)
-    landing = s.landing_dir / "2026-06"
+    landing = s.landing_dir / "2027-03"
     rng = random.Random(3)
 
     def baixa(f: list[str]) -> list[str]:
@@ -43,22 +43,22 @@ def dois_meses(pg):
     novo = _fields(lines[0])
     novo[2] = "SOCIO NOVO DA SILVA"
     _write(landing / "Socios0.zip", member, [*lines, _join(novo)])
-    for comp in ("2026-05", "2026-06"):
+    for comp in ("2027-02", "2027-03"):
         _processa(comp)
     return novo[0]
 
 
 def test_particoes_arquivadas(dois_meses):
-    assert {"2026-05", "2026-06"} <= set(history.arquivadas())
+    assert {"2027-02", "2027-03"} <= set(history.arquivadas())
     for ent in history.ENTIDADES:
-        assert (history.partition("2026-06") / f"{ent}.parquet").exists()
+        assert (history.partition("2027-03") / f"{ent}.parquet").exists()
 
 
 def test_diferenca_mostra_baixas_e_socio_novo(dois_meses):
-    d = diferenca_competencias("2026-05", "2026-06")
+    d = diferenca_competencias("2027-02", "2027-03")
     assert any(m["situacao_atual"] == "08" for m in d["mudancas_situacao"])
     assert any(x["nome_socio"] == "SOCIO NOVO DA SILVA" for x in d["socios_entraram"])
-    so_empresa = diferenca_competencias("2026-05", "2026-06", cnpj_basico=dois_meses)
+    so_empresa = diferenca_competencias("2027-02", "2027-03", cnpj_basico=dois_meses)
     assert all(x["cnpj_basico"] == dois_meses for x in so_empresa["socios_entraram"])
 
 

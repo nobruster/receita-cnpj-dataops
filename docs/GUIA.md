@@ -1,6 +1,6 @@
 # Guia passo a passo — Plataforma DataOps do CNPJ
 
-Este guia leva do zero até a plataforma processando a última competência da Receita, com o Sentinel vigiando. Ele também registra **como o sistema foi construído** (seção 10), para você reproduzir ou estender.
+Este guia leva do zero até a plataforma processando **a última competência publicada** pela Receita (sem carga retroativa). O v1 é o backbone. O Sentinel (agentes) e o MCP são **fase 2**: ficam no profile `fase2` do compose (ADR-0003). Ele também registra **como o sistema foi construído** seguindo o método Converge (seção 10), para você reproduzir ou estender.
 
 > Convenção: os comandos `.\cnpj.ps1 ...` rodam no **PowerShell**, na pasta do projeto. No Linux/WSL, use `make ...` (mesmos nomes).
 >
@@ -85,8 +85,10 @@ O primeiro build leva de 5 a 15 minutos. Containers esperados:
 | `airflow-apiserver` | Interface em **http://localhost:8080** |
 | `airflow-scheduler` | Executa as tarefas (LocalExecutor) |
 | `airflow-dag-processor` | Lê a pasta `dags/` |
-| `sentinel` | Gatilho do Sentinel (verifica `ops.incidents` a cada 60 s) |
-| `mcp` | Servidor MCP em **http://localhost:8000/mcp** |
+| `sentinel` *(fase 2)* | Gatilho do Sentinel (verifica `ops.incidents` a cada 60 s). Só sobe com `.\cnpj.ps1 fase2` |
+| `mcp` *(fase 2)* | Servidor MCP em **http://localhost:8000/mcp**. Só sobe com `.\cnpj.ps1 fase2` |
+
+Todas as portas ficam presas a `127.0.0.1` (Airflow, Postgres, MCP): nada fica exposto na rede.
 
 Entre no Airflow com `AIRFLOW_ADMIN_USER` / `AIRFLOW_ADMIN_PASSWORD`. A DAG **`receita_cnpj_mensal`** aparece pausada.
 
@@ -96,35 +98,36 @@ Entre no Airflow com `AIRFLOW_ADMIN_USER` / `AIRFLOW_ADMIN_PASSWORD`. A DAG **`r
 
 Valida tudo com uma amostra sintética no formato exato da Receita.
 
-1. Coloque `OFFLINE_MODE=true` no `.env` e rode `docker compose up -d` para aplicar.
+1. Coloque `OFFLINE_MODE=true` no `.env` e rode `docker compose up -d` para aplicar. Os comandos `amostra`, `injetar` e `falhas` usam a imagem da fase 2, que é construída na primeira chamada.
 2. Gere uma competência "anterior" e processe:
    ```powershell
    .\cnpj.ps1 amostra 2026-07
    .\cnpj.ps1 rodar 2026-07
    ```
-   No Airflow as 9 tarefas devem ficar verdes. `.\cnpj.ps1 status` mostra `2026-07 | publicada` e **nenhum incidente**: os defeitos conhecidos da fonte, como motivo 32 e UF EX, não viram incidente.
+   No Airflow as 11 tarefas devem ficar verdes. `.\cnpj.ps1 status` mostra `2026-07 | publicada` e **nenhum incidente**: os defeitos conhecidos da fonte, como motivo 32 e UF EX, não viram incidente.
 3. Gere o mês seguinte com uma falha em cascata e processe:
    ```powershell
    .\cnpj.ps1 amostra 2026-08
    .\cnpj.ps1 injetar multi_failure_cascade 2026-08
    .\cnpj.ps1 rodar 2026-08
    ```
-   Os monitores abrem 3 incidentes (`invalid_cnpj`, `orphan_socio`, `volume_drop`). Em até 1 minuto o Sentinel diagnostica e dá a nota.
+   Os monitores abrem 3 incidentes (`invalid_cnpj`, `orphan_socio`, `volume_drop`). Se a fase 2 estiver ativa (`.\cnpj.ps1 fase2`), o Sentinel diagnostica em até 1 minuto **depois que a DAG termina** e dá a nota.
 4. Confira:
    ```powershell
    .\cnpj.ps1 status   # ops.diagnoses: multi_failure_cascade, score_tier=cascade, match_score=1
-   .\cnpj.ps1 evals    # AC-1..AC-6
+   .\cnpj.ps1 evals              # AC-1..AC-8 (AC-7 é provado pela suíte de falhas simuladas)
+   .\cnpj.ps1 evals reprocessar  # mede também o AC-6: recarrega a última competência e compara
    ```
-5. Teste uma falha isolada com o crew de IA (precisa de `OPENAI_API_KEY`):
+5. *(Fase 2)* Teste uma falha isolada com o crew de IA (precisa de `OPENAI_API_KEY` e `.\cnpj.ps1 fase2`):
    ```powershell
    .\cnpj.ps1 amostra 2026-08
    .\cnpj.ps1 injetar orphan_socio 2026-08
-   .\cnpj.ps1 rodar 2026-08
+   .\cnpj.ps1 rodar 2026-08      # reprocessar a última competência é permitido; meses anteriores não
    .\cnpj.ps1 logs sentinel     # procure a linha [SCORECARD]
    ```
    Os arquivos do crew ficam em `/data/sentinel/proposed` e `/data/sentinel/postmortems`:
    ```powershell
-   docker compose exec sentinel ls /data/sentinel/postmortems
+   docker compose --profile fase2 exec sentinel ls /data/sentinel/postmortems
    ```
 
 Lista de falhas: `.\cnpj.ps1 falhas`.
@@ -141,10 +144,12 @@ Lista de falhas: `.\cnpj.ps1 falhas`.
    - `carregar_raw` e `dbt_*`: dezenas de minutos a poucas horas, conforme CPU, RAM e disco.
 5. Depois de concluída: `.\cnpj.ps1 evals`. A primeira execução real é a **linha de base** dos tempos do BRD (AC-2 e AC-3).
 
-**Espaço em disco:** os zips de cada competência ficam em `/data/landing/AAAA-MM` (~6 GB). Mantenha as duas últimas e apague as antigas:
+**Espaço em disco:**
+- os zips ficam em `/data/landing/AAAA-MM` (~6 GB por competência). A tarefa `limpar_landing` mantém automaticamente só as 2 mais recentes (`LANDING_RETENTION`);
+- o histórico Parquet fica em `/data/history/competencia=AAAA-MM/`. A tarefa `arquivar_historico` mantém 12 competências (AC-8).
 
 ```powershell
-docker compose exec sentinel sh -c "ls /data/landing; du -sh /data/*"
+docker compose exec airflow-scheduler sh -c "ls /data/landing /data/history; du -sh /data/*"
 ```
 
 ---
@@ -152,7 +157,13 @@ docker compose exec sentinel sh -c "ls /data/landing; du -sh /data/*"
 ## 7. Operação do dia a dia
 
 - **Automático:** com a DAG ativa, ela roda todo dia às 06:00. Só trabalha quando a Receita publica uma competência nova.
-- **Reprocessar um mês:** Airflow → *Trigger DAG* → `{"competencia": "2026-08"}`, ou `.\cnpj.ps1 rodar 2026-08`.
+- **Reprocessar:** Airflow → *Trigger DAG* → `{"competencia": "2026-08"}`, ou `.\cnpj.ps1 rodar 2026-08`. Só vale para a **última** competência concluída ou uma mais nova. Meses antigos são consultados no histórico:
+  ```powershell
+  .\cnpj.ps1 diferenca 2026-07 2026-08            # o que mudou entre dois meses
+  .\cnpj.ps1 diferenca 2026-07 2026-08 12345678   # só uma empresa (KYC)
+  ```
+- **Falha de fonte:** servidor da Receita fora do ar vira incidente `source_unavailable`, e competência nova que não aparece em 45 dias vira `stale_release`. Os dois ficam na pseudo-competência `fonte` em `.\cnpj.ps1 status`.
+- **Leituras x escrita:** uma consulta aberta nunca derruba a DAG. O escritor espera até `DUCKDB_LOCK_WAIT_S` (padrão 600 s) pelo leitor.
 - **Falhou?**
   1. Veja o incidente (`.\cnpj.ps1 status`) e o diagnóstico do Sentinel.
   2. Leia o patch proposto em `/data/sentinel/proposed`. Ele **nunca é aplicado sozinho**.
@@ -178,8 +189,8 @@ Conecte em servidor `localhost:5433`, banco `cnpj`, schema `gold`, com usuário 
 - `gold_painel_prospeccao` (ativos por UF, município, CNAE, porte e Simples);
 - `gold_rede_societaria`.
 
-### MCP no Claude Desktop
-Em *Settings → Developer → Edit Config* (`claude_desktop_config.json`):
+### MCP no Claude Desktop *(fase 2)*
+Suba a fase 2 (`.\cnpj.ps1 fase2`) e, em *Settings → Developer → Edit Config* (`claude_desktop_config.json`):
 
 ```json
 {
@@ -187,7 +198,7 @@ Em *Settings → Developer → Edit Config* (`claude_desktop_config.json`):
     "receita-cnpj": {
       "command": "docker",
       "args": ["compose", "-f", "D:/projetos/receita-cnpj-dataops/docker-compose.yml",
-               "exec", "-T", "mcp", "python", "-m", "intelligence.server"]
+               "--profile", "fase2", "exec", "-T", "mcp", "python", "-m", "intelligence.server"]
     }
   }
 }
@@ -199,10 +210,10 @@ Reinicie o Claude Desktop e pergunte, por exemplo:
 - "Quem são os sócios da raiz 12345678 e com quais empresas ela se relaciona?"
 - "Liste restaurantes ativos no DF abertos nos últimos 6 meses."
 
-As ferramentas disponíveis são `ficha_cnpj`, `quadro_societario`, `rede_societaria`, `prospectar`, `painel_mercado`, `resumo_competencia` e `schema_gold`. Todas são somente leitura, com limite de linhas.
+As ferramentas disponíveis são `ficha_cnpj`, `quadro_societario`, `rede_societaria`, `prospectar`, `painel_mercado`, `diferenca_competencias`, `resumo_competencia` e `schema_gold`. Todas são somente leitura, com limite de linhas.
 
 ### SQL direto no DuckDB
-`.\cnpj.ps1 consulta "SELECT uf, count(*) FROM gold.gold_empresa_detalhe GROUP BY 1"`. O comando é somente leitura e aceita só tabelas gold, silver e `raw_load_log`.
+`.\cnpj.ps1 consulta "SELECT uf, count(*) FROM gold.gold_empresa_detalhe GROUP BY 1"`. O comando aceita só tabelas gold, silver e `raw_load_log` (conferidas pelo parser do DuckDB) e abre o banco **sem acesso a arquivos do container**, então nem SQL malicioso consegue ler o `.env`.
 
 > Enquanto a DAG escreve no DuckDB, as leituras esperam alguns segundos e tentam de novo. O DuckDB aceita um único processo escritor por vez.
 
@@ -217,7 +228,7 @@ As ferramentas disponíveis são `ficha_cnpj`, `quadro_societario`, `rede_societ
   - sem chave da OpenAI → fluxo determinístico;
   - API fora do ar → `no-run` registrado. O Sentinel nunca inventa nota.
 - **Custo:** só roda quando há incidente. Os especialistas usam o modelo barato e só o gerente usa o mais forte.
-- **O que vai para a OpenAI:** logs, contagens e amostras de até 3 chaves por regra, nunca a base em massa. Para zero chamadas externas, use Ollama:
+- **O que vai para a OpenAI:** logs, contagens, até 3 CNPJs de exemplo por regra de quarentena e consultas ad hoc de no máximo 20 linhas. Colunas de contato e de sócio (e-mail, telefone, endereço, nome/CPF de sócio) e `SELECT *` são **bloqueados** para o agente. Para zero chamadas externas, use Ollama:
   ```text
   SENTINEL_LLM_PROVIDER=ollama
   SENTINEL_LLM_MODEL=ollama/qwen2.5:14b
@@ -262,7 +273,19 @@ As ferramentas disponíveis são `ficha_cnpj`, `quadro_societario`, `rede_societ
 5. **Sentinel.**
    - `chaos/`: amostra e falhas.
    - `sentinel/`: ferramentas, crew, fluxo, pontuação e gatilho.
-6. **Prova.** `tests/` (41 testes, com e2e por falha) e `pipeline/evals.py` (AC medidos).
+6. **Prova.** `tests/` (67 testes, com e2e por falha e regressões da revisão) e `pipeline/evals.py` (AC medidos).
+
+### 10.2.1 O método Converge (como este repositório foi feito)
+| Passo | Artefato |
+|---|---|
+| BRD | `docs/business-requirements-document.md` / `.pdf` |
+| P1 · Intent (sem tecnologia, interrogatório D-1..D-3) | `docs/engineering-brief.pdf` / `.md` |
+| P2 · Structure (spec aterrada no código, lacunas G1–G7) | `docs/tech-spec.md`, `docs/converge/p2-structure-grounding.md` |
+| P3 · Decomposition (dois planos pela costura A/B) | `sketch/receita-backbone.md`, `sketch/sentinel-engine.md` |
+| P4 · Consensus (adversário com outro modelo, 7 objeções) | `docs/converge/p4-consensus.md`, ADR-0003 |
+| Tasks (Task-Spec v2.1 com evals bash) | `tasks/T-20260911-*.md` (validar com `.claude/skills/task-spec/scripts/validate-task-spec.sh`) |
+| Build com a frota de agentes | `.claude/agents` (airflow/dbt/duckdb/mcp/crewai + closers), `.claude/kb` |
+| Closers (reviewer independente → correções → docs) | `docs/converge/closers-review.md` |
 
 ### 10.3 Receitas de extensão
 
@@ -290,7 +313,9 @@ As ferramentas disponíveis são `ficha_cnpj`, `quadro_societario`, `rede_societ
 | `Out of Memory` no dbt | `DUCKDB_MEMORY_LIMIT` alto demais para o Docker | Reduza o limite ou aumente o `.wslconfig` |
 | Tudo lento com `CNPJ_DATA=D:/...` | Bind mount do Windows | Volte para `CNPJ_DATA=cnpj_data` |
 | `layout_drift` numa carga real | A Receita mudou colunas | Seção 10.3 |
-| Sentinel sempre `deterministic-flow` | Sem `OPENAI_API_KEY` | Preencha a chave e rode `docker compose up -d sentinel` |
+| Sentinel sempre `deterministic-flow` | Sem `OPENAI_API_KEY` | Preencha a chave e rode `.\cnpj.ps1 fase2` |
+| `rodar AAAA-MM` recusado ("anterior à última") | Reprocessar mês antigo faria o consumo regredir | Use `.\cnpj.ps1 diferenca` sobre o histórico |
+| Tarefa falhou com `warehouse_busy` | Outro processo segurou o DuckDB por mais de `DUCKDB_LOCK_WAIT_S` | Feche consultas longas e clique em *Clear* na tarefa |
 | Login do Airflow falha | Usuário não criado | `docker compose run --rm airflow-init` |
 
 ---

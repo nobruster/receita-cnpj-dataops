@@ -1,12 +1,14 @@
 """C6 — publica tabelas gold do DuckDB no PostgreSQL (Power BI / SQL).
 
 Sem extensão ``postgres`` do DuckDB (que exige download em tempo de execução e
-costuma ser bloqueado em rede corporativa): o DuckDB exporta CSV e o psycopg faz
-``COPY FROM STDIN`` em streaming — rápido e sem dependência extra.
+costuma ser bloqueada em rede corporativa): o DuckDB exporta CSV e o psycopg faz
+``COPY FROM STDIN`` em streaming.
 
-Troca atômica: carrega em ``<tabela>__novo`` e renomeia numa transação, então o
-Power BI nunca vê tabela pela metade. ``gold_resumo_competencia`` é a exceção:
-acumula histórico (uma linha por competência).
+Tudo numa ÚNICA transação (achado 9 do reviewer): cada tabela é carregada em
+``<tabela>__novo``; só no fim, com ``lock_timeout``, as antigas saem e as novas entram.
+Ou o Postgres vê a competência nova inteira, ou continua na anterior inteira.
+``gold_resumo_competencia`` acumula histórico (uma linha por competência) e ganha
+colunas novas automaticamente se o modelo dbt evoluir.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ _TYPE_MAP = {
     "DOUBLE": "double precision", "FLOAT": "real", "BOOLEAN": "boolean",
     "TIMESTAMP WITH TIME ZONE": "timestamptz", "TIMESTAMP": "timestamp",
 }
+LOCK_TIMEOUT = "60s"
 
 
 def _pg_type(duck_type: str) -> str:
@@ -41,45 +44,72 @@ def _pg_type(duck_type: str) -> str:
     return _TYPE_MAP.get(duck_type, "text")
 
 
-def publish_table(con: duckdb.DuckDBPyConnection, table: str, competencia: str,
-                  settings: Settings | None = None) -> int:
-    s = settings or get_settings()
-    schema = s.publish_schema
+def _columns(con: duckdb.DuckDBPyConnection, table: str) -> list[tuple[str, str]]:
     cols = con.execute(
         "SELECT column_name, data_type FROM information_schema.columns "
         "WHERE table_schema = 'gold' AND table_name = ? ORDER BY ordinal_position", [table]
     ).fetchall()
     if not cols:
         raise ValueError(f"gold.{table} não existe no warehouse")
-    tmp = s.work_dir / f"publish_{table}.csv"
-    con.execute(f"COPY gold.{table} TO '{tmp.as_posix()}' (HEADER false, DELIMITER ',', QUOTE '\"', NULL '')")
-    ddl_cols = ", ".join(f'"{c}" {_pg_type(t)}' for c, t in cols)
-    names = ", ".join(f'"{c}"' for c, _ in cols)
-    rows = 0
+    return cols
+
+
+def _copy(cur: psycopg.Cursor, target: str, names: str, csv_path: Path) -> None:
+    with cur.copy(f"COPY {target} ({names}) FROM STDIN (FORMAT csv, NULL '')") as cp, csv_path.open("rb") as fh:
+        while chunk := fh.read(8 * 1024 * 1024):
+            cp.write(chunk)
+
+
+def publish_all(con: duckdb.DuckDBPyConnection, tables: list[str], competencia: str,
+                settings: Settings | None = None) -> dict[str, int]:
+    s = settings or get_settings()
+    schema = s.publish_schema
+    specs = {t: _columns(con, t) for t in tables}
+    csvs: dict[str, Path] = {}
     try:
-        with psycopg.connect(s.pg_dsn) as pg, pg.cursor() as cur:
+        for t in tables:
+            csvs[t] = s.work_dir / f"publish_{t}.csv"
+            con.execute(f"COPY gold.{t} TO '{csvs[t].as_posix()}' (HEADER false, DELIMITER ',', QUOTE '\"', NULL '')")
+        rows: dict[str, int] = {}
+        with psycopg.connect(s.pg_dsn) as pg, pg.cursor() as cur:  # uma transação para tudo
+            cur.execute(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT}'")
             cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
-            if table in HISTORY_TABLES:
-                cur.execute(f'CREATE TABLE IF NOT EXISTS {schema}."{table}" ({ddl_cols})')
-                cur.execute(f'DELETE FROM {schema}."{table}" WHERE competencia = %s', [competencia])
-                target = f'{schema}."{table}"'
-            else:
-                cur.execute(f'DROP TABLE IF EXISTS {schema}."{table}__novo"')
-                cur.execute(f'CREATE UNLOGGED TABLE {schema}."{table}__novo" ({ddl_cols})')
-                target = f'{schema}."{table}__novo"'
-            with cur.copy(f"COPY {target} ({names}) FROM STDIN (FORMAT csv, NULL '')") as cp, \
-                    Path(tmp).open("rb") as fh:
-                while chunk := fh.read(8 * 1024 * 1024):
-                    cp.write(chunk)
-            rows = cur.execute(f"SELECT count(*) FROM {target}").fetchone()[0]
-            if table not in HISTORY_TABLES:
-                cur.execute(f'ALTER TABLE {schema}."{table}__novo" SET LOGGED')
-                for col in INDEXES.get(table, []):
-                    cur.execute(f'CREATE INDEX ON {schema}."{table}__novo" ("{col}")')
-                cur.execute(f'DROP TABLE IF EXISTS {schema}."{table}"')
-                cur.execute(f'ALTER TABLE {schema}."{table}__novo" RENAME TO "{table}"')
+            for t, cols in specs.items():
+                ddl = ", ".join(f'"{c}" {_pg_type(ty)}' for c, ty in cols)
+                names = ", ".join(f'"{c}"' for c, _ in cols)
+                if t in HISTORY_TABLES:
+                    cur.execute(f'CREATE TABLE IF NOT EXISTS {schema}."{t}" ({ddl})')
+                    existentes = {r[0] for r in cur.execute(
+                        "SELECT column_name FROM information_schema.columns WHERE table_schema = %s "
+                        "AND table_name = %s", [schema, t]).fetchall()}
+                    for c, ty in cols:
+                        if c not in existentes:
+                            cur.execute(f'ALTER TABLE {schema}."{t}" ADD COLUMN "{c}" {_pg_type(ty)}')
+                    cur.execute(f'DELETE FROM {schema}."{t}" WHERE competencia = %s', [competencia])
+                    _copy(cur, f'{schema}."{t}"', names, csvs[t])
+                    rows[t] = cur.execute(f'SELECT count(*) FROM {schema}."{t}" WHERE competencia = %s',
+                                          [competencia]).fetchone()[0]
+                else:
+                    cur.execute(f'DROP TABLE IF EXISTS {schema}."{t}__novo"')
+                    cur.execute(f'CREATE TABLE {schema}."{t}__novo" ({ddl})')
+                    _copy(cur, f'{schema}."{t}__novo"', names, csvs[t])
+                    for col in INDEXES.get(t, []):
+                        cur.execute(f'CREATE INDEX ON {schema}."{t}__novo" ("{col}")')
+                    rows[t] = cur.execute(f'SELECT count(*) FROM {schema}."{t}__novo"').fetchone()[0]
+            for t in specs:  # troca: tudo ou nada
+                if t not in HISTORY_TABLES:
+                    cur.execute(f'DROP TABLE IF EXISTS {schema}."{t}"')
+                    cur.execute(f'ALTER TABLE {schema}."{t}__novo" RENAME TO "{t}"')
             pg.commit()
     finally:
-        tmp.unlink(missing_ok=True)
-    log.info("publicado %s.%s: %s linhas", schema, table, f"{rows:,}")
+        for p in csvs.values():
+            p.unlink(missing_ok=True)
+    for t, n in rows.items():
+        log.info("publicado %s.%s: %s linhas", schema, t, f"{n:,}")
     return rows
+
+
+def publish_table(con: duckdb.DuckDBPyConnection, table: str, competencia: str,
+                  settings: Settings | None = None) -> int:
+    """Atalho para uma tabela (mantido para compatibilidade)."""
+    return publish_all(con, [table], competencia, settings)[table]

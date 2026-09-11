@@ -4,7 +4,9 @@ Plataforma **DataOps on-premises** para processar **todos os arquivos abertos do
 
 Adaptação da arquitetura de [owshq-mec/ws-3-crew-ai-multi-agent](https://github.com/owshq-mec/ws-3-crew-ai-multi-agent) para arquivos da Receita, com **Airflow + DuckDB** no lugar de Dagster + Postgres-fonte.
 
-> **Documentos:** [BRD](docs/business-requirements-document.md) · [Guia passo a passo](docs/GUIA.md) · [Arquitetura](docs/ARQUITETURA.md) · [ADRs](docs/adrs/)
+> **Documentos:** [BRD](docs/business-requirements-document.md) · [Engineering brief](docs/engineering-brief.md) · [Tech spec](docs/tech-spec.md) · [Planos](sketch/) · [Consenso P4](docs/converge/p4-consensus.md) · [Tasks](tasks/) · [Guia passo a passo](docs/GUIA.md) · [Arquitetura](docs/ARQUITETURA.md) · [ADRs](docs/adrs/)
+>
+> **Escopo v1** (ADR-0003): backbone. Sentinel e MCP são **fase 2** (`docker compose --profile fase2`).
 
 ## O que é
 
@@ -25,12 +27,13 @@ Casos de uso atendidos: **crédito e risco** (`gold_empresa_detalhe`), **KYC/PLD
 ## Início rápido (Windows + Docker Desktop)
 
 ```powershell
-copy .env.example .env      # edite senhas e OPENAI_API_KEY
-.\cnpj.ps1 up               # build + sobe tudo
+copy .env.example .env      # edite as senhas (OPENAI_API_KEY só na fase 2)
+.\cnpj.ps1 up               # build + sobe o backbone v1 (Postgres + Airflow)
+.\cnpj.ps1 fase2            # (opcional) + Sentinel e MCP
 # Airflow: http://localhost:8080  ->  ative a DAG receita_cnpj_mensal
 .\cnpj.ps1 rodar            # processa a última competência publicada
 .\cnpj.ps1 status           # competências, incidentes e diagnósticos
-.\cnpj.ps1 evals            # critérios de aceite medidos
+.\cnpj.ps1 evals            # critérios de aceite AC-1..AC-8 medidos
 ```
 
 Sem internet ou para testar primeiro: coloque `OFFLINE_MODE=true` no `.env`, gere uma amostra com `.\cnpj.ps1 amostra 2026-08` e rode. O passo a passo completo está em [docs/GUIA.md](docs/GUIA.md).
@@ -38,18 +41,19 @@ Sem internet ou para testar primeiro: coloque `OFFLINE_MODE=true` no `.env`, ger
 ## Fluxo da DAG `receita_cnpj_mensal`
 
 ```text
-descobrir → baixar → carregar_raw → dbt_bronze → dbt_silver → dbt_gold → qualidade → publicar_postgres → concluir
+descobrir → baixar → carregar_raw → dbt_bronze → dbt_silver → dbt_gold → qualidade
+          → arquivar_historico → publicar_postgres → limpar_landing → concluir
 ```
 
-- Roda todo dia às 06:00. Só trabalha quando há competência nova (a última concluída fica em `ops.competencias`).
-- Para reprocessar um mês, use **Trigger DAG** com `{"competencia": "2026-08"}`.
+- Roda todo dia às 06:00 e processa **só a última competência publicada**, sem carga retroativa. Só trabalha quando há competência nova (a última concluída fica em `ops.competencias`).
+- Para reprocessar a última competência, use **Trigger DAG** com `{"competencia": "2026-08"}`. Meses antigos ficam no histórico Parquet de 12 meses.
 
 ## Desenvolvimento
 
 ```bash
 uv sync
 uv run ruff check .
-PG_HOST=localhost PG_USER=... PG_PASSWORD=... PG_DB=... uv run pytest -q   # 41 testes; e2e precisa de Postgres
+PG_HOST=localhost PG_USER=... PG_PASSWORD=... PG_DB=... uv run pytest -q   # 67 testes; e2e precisa de Postgres
 ```
 
 A suíte de ponta a ponta injeta **cada uma das 12 falhas mais a cascata**, roda o pipeline de verdade (DuckDB + dbt) e pontua o diagnóstico contra a verdade de referência.

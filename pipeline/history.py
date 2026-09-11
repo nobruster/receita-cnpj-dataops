@@ -57,7 +57,7 @@ def arquivadas(settings: Settings | None = None) -> list[str]:
     if not base.exists():
         return []
     comps = [p.name.split("=", 1)[1] for p in base.glob("competencia=*") if p.is_dir()]
-    return sorted(c for c in comps if COMPETENCIA_RE.match(c))
+    return sorted(c for c in comps if COMPETENCIA_RE.fullmatch(c))
 
 
 def apply_retention(keep: int = RETENCAO, settings: Settings | None = None) -> list[str]:
@@ -72,7 +72,7 @@ def apply_retention(keep: int = RETENCAO, settings: Settings | None = None) -> l
 
 def read_sql(entidade: str, competencia: str, settings: Settings | None = None) -> str:
     """Expressão ``read_parquet(...)`` para uma entidade de uma competência arquivada."""
-    if entidade not in ENTIDADES or not COMPETENCIA_RE.match(competencia):
+    if entidade not in ENTIDADES or not COMPETENCIA_RE.fullmatch(competencia):
         raise ValueError(f"entidade/competência inválida: {entidade} {competencia}")
     path = partition(competencia, settings) / f"{entidade}.parquet"
     if not path.exists():

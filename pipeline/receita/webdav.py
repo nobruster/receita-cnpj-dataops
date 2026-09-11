@@ -96,7 +96,7 @@ def list_competencias(settings: Settings | None = None) -> list[str]:
     with _client(s) as c:
         entries = _propfind(c, s.rfb_webdav_url.rstrip("/") + "/")
     comps = {e["href"].rstrip("/").rsplit("/", 1)[-1] for e in entries if e["is_dir"]}
-    return sorted(x for x in comps if COMPETENCIA_RE.match(x))
+    return sorted(x for x in comps if COMPETENCIA_RE.fullmatch(x))
 
 
 def latest_competencia(settings: Settings | None = None) -> str:
@@ -146,56 +146,81 @@ def download_file(
     settings: Settings | None = None,
     client: httpx.Client | None = None,
 ) -> Path:
-    """Baixa um arquivo com retomada. Idempotente: pula se já estiver completo."""
+    """Baixa um arquivo com retomada. Idempotente: pula se já estiver completo.
+
+    Um ``.part`` de outra versão do arquivo (ETag diferente) ou maior que o remoto é
+    descartado; se o zip montado falhar no CRC/tamanho, o ``.part`` é apagado e o arquivo
+    é baixado inteiro mais uma vez antes de desistir (achado 4 do reviewer).
+    """
     s = settings or get_settings()
     dest_dir.mkdir(parents=True, exist_ok=True)
     final = dest_dir / remote.name
     part = dest_dir / (remote.name + ".part")
+    etag_file = dest_dir / (remote.name + ".part.etag")
     if final.exists() and final.stat().st_size == remote.size:
         return final
+    if part.exists():
+        stored = etag_file.read_text(encoding="utf-8").strip() if etag_file.exists() else ""
+        if (remote.etag and stored and stored != remote.etag) or (remote.size and part.stat().st_size > remote.size):
+            log.warning("%s: .part de outra versão (etag/tamanho); recomeçando do zero", remote.name)
+            part.unlink()
+    etag_file.write_text(remote.etag, encoding="utf-8")
 
-    url = f"{s.rfb_webdav_url.rstrip('/')}/{competencia}/{remote.name}"
     own_client = client is None
     c = client or _client(s)
     try:
-        for attempt in range(1, s.download_retries + 1):
-            offset = part.stat().st_size if part.exists() else 0
-            if remote.size and offset >= remote.size:
-                break
-            headers = {"Accept-Encoding": "identity"}
-            if offset:
-                headers["Range"] = f"bytes={offset}-"
+        for tentativa_completa in (1, 2):
+            _fetch(c, s, competencia, remote, part)
+            got = part.stat().st_size if part.exists() else 0
             try:
-                with c.stream("GET", url, headers=headers) as resp:
-                    if resp.status_code == 416:  # já temos tudo
-                        break
-                    resp.raise_for_status()
-                    mode = "ab"
-                    if offset and resp.status_code == 200:
-                        log.warning("%s: servidor ignorou Range; recomeçando do zero", remote.name)
-                        mode = "wb"
-                    with part.open(mode) as fh:
-                        for chunk in resp.iter_bytes(CHUNK):
-                            fh.write(chunk)
-                if not remote.size or part.stat().st_size >= remote.size:
-                    break
-            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
-                wait = min(300, 5 * 2 ** (attempt - 1))
-                log.warning("%s: tentativa %d/%d falhou (%s); nova tentativa em %ss",
-                            remote.name, attempt, s.download_retries, exc, wait)
-                time.sleep(wait)
-        else:
-            raise RuntimeError(f"{remote.name}: download não concluiu após {s.download_retries} tentativas")
+                if remote.size and got != remote.size:
+                    raise CorruptZipError(f"{remote.name}: tamanho {got} != esperado {remote.size}",
+                                          arquivo=remote.name)
+                verify_zip(part)
+            except CorruptZipError:
+                part.unlink(missing_ok=True)
+                if tentativa_completa == 2:
+                    raise
+                log.warning("%s: arquivo montado inválido; baixando inteiro de novo", remote.name)
+                continue
+            part.replace(final)
+            etag_file.unlink(missing_ok=True)
+            return final
     finally:
         if own_client:
             c.close()
+    raise AssertionError("inalcançável")
 
-    got = part.stat().st_size if part.exists() else 0
-    if remote.size and got != remote.size:
-        raise RuntimeError(f"{remote.name}: tamanho {got} != esperado {remote.size}")
-    verify_zip(part)
-    part.replace(final)
-    return final
+
+def _fetch(c: httpx.Client, s: Settings, competencia: str, remote: RemoteFile, part: Path) -> None:
+    url = f"{s.rfb_webdav_url.rstrip('/')}/{competencia}/{remote.name}"
+    for attempt in range(1, s.download_retries + 1):
+        offset = part.stat().st_size if part.exists() else 0
+        if remote.size and offset >= remote.size:
+            return
+        headers = {"Accept-Encoding": "identity"}
+        if offset:
+            headers["Range"] = f"bytes={offset}-"
+        try:
+            with c.stream("GET", url, headers=headers) as resp:
+                if resp.status_code == 416:  # já temos tudo
+                    return
+                resp.raise_for_status()
+                mode = "ab"
+                if offset and resp.status_code == 200:
+                    log.warning("%s: servidor ignorou Range; recomeçando do zero", remote.name)
+                    mode = "wb"
+                with part.open(mode) as fh:
+                    for chunk in resp.iter_bytes(CHUNK):
+                        fh.write(chunk)
+            if not remote.size or part.stat().st_size >= remote.size:
+                return
+        except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+            wait = min(300, 5 * 2 ** (attempt - 1))
+            log.warning("%s: tentativa %d/%d falhou (%s); nova tentativa em %ss",
+                        remote.name, attempt, s.download_retries, exc, wait)
+            time.sleep(wait)
+    raise RuntimeError(f"{remote.name}: download não concluiu após {s.download_retries} tentativas")
 
 
 def write_manifest(competencia: str, files: list[RemoteFile], dest_dir: Path) -> Path:

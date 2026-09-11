@@ -2,7 +2,9 @@
 .DEFAULT_GOAL := help
 .PHONY: help up fase2 down status logs rodar amostra injetar falhas sentinel evals test lint
 
-C ?= $(shell date +%Y-%m)
+COMP ?= $(shell date +%Y-%m)
+PG_USER ?= $(shell grep -E '^PG_USER=' .env 2>/dev/null | cut -d= -f2)
+PG_DB ?= $(shell grep -E '^PG_DB=' .env 2>/dev/null | cut -d= -f2)
 help: ## Lista os comandos
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-10s\033[0m %s\n",$$1,$$2}'
 up: ## Constrói e sobe o backbone v1
@@ -13,12 +15,12 @@ down: ## Para os containers
 	docker compose down
 status: ## Containers e competências
 	docker compose ps
-	docker compose exec -T postgres psql -U $${PG_USER:-cnpj} -d $${PG_DB:-cnpj} -c "SELECT * FROM ops.competencias ORDER BY 1 DESC LIMIT 5"
+	docker compose exec -T postgres psql -U $(or $(PG_USER),cnpj) -d $(or $(PG_DB),cnpj) -c "SELECT * FROM ops.competencias ORDER BY 1 DESC LIMIT 5"
 logs: ## Logs do scheduler
 	docker compose logs -f --tail 200 airflow-scheduler
-rodar: ## Dispara a DAG (COMP=AAAA-MM opcional)
+rodar: ## Dispara a DAG (FORCAR=AAAA-MM opcional; sem ele = última publicada)
 	docker compose exec airflow-apiserver airflow dags unpause receita_cnpj_mensal
-	docker compose exec airflow-apiserver airflow dags trigger receita_cnpj_mensal $(if $(COMP),--conf '{"competencia":"$(COMP)"}',)
+	docker compose exec airflow-apiserver airflow dags trigger receita_cnpj_mensal $(if $(FORCAR),--conf '{"competencia":"$(FORCAR)"}',)
 amostra: ## Gera amostra sintética (COMP=AAAA-MM)
 	docker compose --profile fase2 run --rm sentinel python -m chaos.cli sample --competencia $(COMP)
 injetar: ## Injeta falha (KEY=... COMP=AAAA-MM)

@@ -142,7 +142,7 @@ LOAD_ORDER: tuple[str, ...] = (
 EXPECTED_FILES: frozenset[str] = frozenset(f for e in ENTITIES.values() for f in e.expected_files)
 
 _FILE_RE = re.compile(r"^(?P<prefix>[A-Za-z]+?)(?P<part>\d)?\.zip$")
-COMPETENCIA_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+COMPETENCIA_RE = re.compile(r"\d{4}-(0[1-9]|1[0-2])")  # usar com fullmatch
 
 
 def entity_for_file(filename: str) -> Entity | None:
@@ -159,6 +159,6 @@ def entity_for_file(filename: str) -> Entity | None:
 
 
 def validate_competencia(value: str) -> str:
-    if not COMPETENCIA_RE.match(value):
+    if not COMPETENCIA_RE.fullmatch(value):
         raise ValueError(f"competência inválida: {value!r} (esperado AAAA-MM)")
     return value

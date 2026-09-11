@@ -1,7 +1,7 @@
 ---
 id: T-20260911-02-tempos-e-fonte
 title: Tempos de AC-2/AC-3 e alertas da fonte (G2/G3/O2)
-status: ready
+status: done
 format_version: 2
 effort: M
 budget_iterations: 15
@@ -27,9 +27,9 @@ security_class: (none)
 source_action_item: (none)
 linear_ref: (none)
 execution_backend: any
-signed_off: false
-signed_off_by: (none)
-signed_off_at: (none)
+signed_off: true
+signed_off_by: closers-gate
+signed_off_at: 2026-09-11T00:00:00Z
 ---
 
 # Tempos de AC-2/AC-3 e alertas da fonte (G2/G3/O2)

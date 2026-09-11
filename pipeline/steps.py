@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, date, datetime
@@ -23,16 +24,18 @@ from typing import Any
 
 from pipeline import history, ops, publish, quality
 from pipeline.config import get_settings
-from pipeline.errors import PipelineFailure, SourceUnavailableError, setup_logging
+from pipeline.errors import DbtFailure, PipelineFailure, SourceUnavailableError, failure_line, setup_logging
 from pipeline.receita import loader, webdav
 from pipeline.receita.layout import validate_competencia
-from pipeline.warehouse import connect_rw
+from pipeline.warehouse import WarehouseBusyError, connect_rw, effective_memory_limit
 
 log = logging.getLogger("pipeline.steps")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DBT_DIR = PROJECT_ROOT / "transform"
 # Uma camada por tarefa (visibilidade no Airflow). Seeds de domínio vão junto do bronze.
-DBT_LAYERS: tuple[str, ...] = ("resource_type:seed bronze", "silver", "gold")
+# O teste singular no_reject_leaks_to_gold (AC-4) tem pais em silver E gold: vai explícito no gold,
+# senão a seleção indireta "cautious" o descarta (achado 13 do reviewer).
+DBT_LAYERS: tuple[str, ...] = ("resource_type:seed bronze", "silver", "gold no_reject_leaks_to_gold")
 
 
 def _now() -> datetime:
@@ -47,9 +50,17 @@ def step[F: Callable[..., Any]](fn: F) -> F:
         setup_logging(get_settings().logs_dir)
         try:
             return fn(competencia, *args, **kwargs)
-        except PipelineFailure as exc:
-            ops.open_incident(exc.key, "pipeline", competencia, str(exc), "pipeline_logs")
-            ops.set_status(competencia, "falhou", f"{fn.__name__}: {exc}")
+        except Exception as exc:
+            # Toda falha vira incidente + status final (achado 6 do reviewer): nada fica
+            # "baixando"/"transformada" para sempre, e o Sentinel enxerga o caso.
+            if isinstance(exc, PipelineFailure):
+                key, surface = exc.key, "dbt_run_results" if isinstance(exc, DbtFailure) else "pipeline_logs"
+            else:
+                key = "warehouse_busy" if isinstance(exc, WarehouseBusyError) else "pipeline_error"
+                surface = "pipeline_logs"
+                log.error(failure_line(key, competencia=competencia, etapa=fn.__name__, erro=type(exc).__name__))
+            ops.open_incident_once(key, "pipeline", competencia, f"{fn.__name__}: {exc}"[:2000], surface)
+            ops.set_status(competencia, "falhou", f"{fn.__name__}: {exc}"[:500])
             raise
 
     return wrapper  # type: ignore[return-value]
@@ -67,7 +78,12 @@ def discover(force: str | None = None) -> dict[str, Any]:
     ops.ensure_schema()
     if force:
         comp = validate_competencia(force)
-        ops.mark_detected(comp)
+        feito = ops.last_processed()
+        if feito and comp < feito:
+            # Reprocessar um mês antigo faria o gold e o Postgres regredirem (achado 8 do reviewer).
+            raise ValueError(f"{comp} é anterior à última competência processada ({feito}). "
+                             "Meses antigos ficam no histórico Parquet (diferenca_competencias).")
+        ops.mark_detected(comp, reset=True)
         return {"competencia": comp, "skip": False, "motivo": "forçada por parâmetro"}
     if s.offline_mode:
         locais = sorted(p.name for p in s.landing_dir.glob("????-??") if p.is_dir())
@@ -80,7 +96,7 @@ def discover(force: str | None = None) -> dict[str, Any]:
         except Exception as exc:  # rede, TLS, 4xx/5xx, XML inválido, pasta vazia
             err = SourceUnavailableError(f"fonte da Receita indisponível: {exc}", url=s.rfb_webdav_url)
             log.error(err.contract_line())
-            ops.open_incident(err.key, "pipeline", ops.FONTE, str(err), "pipeline_logs")
+            ops.open_incident_once(err.key, "pipeline", ops.FONTE, str(err), "pipeline_logs")
             ops.set_status(ops.FONTE, "falhou", str(err)[:500])
             raise err from exc
         _check_stale(comp, s.dq_stale_days)
@@ -142,12 +158,17 @@ def load_raw(competencia: str) -> dict[str, Any]:
 
 
 def dbt(competencia: str, select: str) -> None:
-    """``dbt build --select <select>`` com a competência como var."""
+    """``dbt build --select <select>`` com a competência como var.
+
+    Usa o mesmo teto de memória das conexões Python (achado 5) e, se um leitor segurar o
+    DuckDB, espera e tenta de novo em vez de falhar a tarefa (achado 2). Falha real vira
+    :class:`DbtFailure` (o ``@step`` registra incidente e status).
+    """
     s = get_settings()
     env = {
         **os.environ,
         "DUCKDB_DATABASE": str(s.warehouse_path),
-        "DUCKDB_MEMORY_LIMIT": s.duckdb_memory_limit,
+        "DUCKDB_MEMORY_LIMIT": effective_memory_limit(s.duckdb_memory_limit),
         "DUCKDB_THREADS": str(s.duckdb_threads),
         "DBT_TARGET_PATH": os.environ.get("DBT_TARGET_PATH", str(s.data_dir / "dbt" / "target")),
         "DBT_LOG_PATH": os.environ.get("DBT_LOG_PATH", str(s.data_dir / "dbt" / "logs")),
@@ -156,13 +177,23 @@ def dbt(competencia: str, select: str) -> None:
     }
     cmd = [os.environ.get("DBT_BIN", "dbt"), "build", "--project-dir", str(DBT_DIR), "--profiles-dir",
            str(DBT_DIR / "profiles"), "--select", select, "--vars", f"{{competencia: '{competencia}'}}"]
-    log.info("executando: %s", " ".join(cmd))
-    proc = subprocess.run(cmd, env=env, cwd=DBT_DIR, text=True, capture_output=True)
-    print(proc.stdout[-20000:])
-    if proc.returncode != 0:
+    inicio = time.monotonic()
+    while True:
+        log.info("executando: %s", " ".join(cmd))
+        proc = subprocess.run(cmd, env=env, cwd=DBT_DIR, text=True, capture_output=True)
+        print(proc.stdout[-20000:])
+        if proc.returncode == 0:
+            return
+        saida = proc.stdout + proc.stderr
+        if "Could not set lock" in saida and time.monotonic() - inicio < s.duckdb_lock_wait_s:
+            log.info("dbt: warehouse ocupado por um leitor; nova tentativa em 10s")
+            time.sleep(10)
+            continue
         print(proc.stderr[-5000:])
-        ops.set_status(competencia, "falhou", f"dbt build --select {select} (exit {proc.returncode})")
-        raise RuntimeError(f"dbt build --select {select} falhou (exit {proc.returncode})")
+        err = DbtFailure(f"dbt build --select {select} falhou (exit {proc.returncode})",
+                         competencia=competencia, selecao=select.replace(" ", "+"))
+        log.error(err.contract_line())
+        raise err
 
 
 @step
@@ -197,10 +228,10 @@ def publish_postgres(competencia: str) -> dict[str, int]:
     s = get_settings()
     if not s.publish_enabled:
         return {}
+    tabelas = [t.strip() for t in s.publish_tables.split(",") if t.strip()]
     con = connect_rw(s)
     try:
-        return {t: publish.publish_table(con, t.strip(), competencia, s)
-                for t in s.publish_tables.split(",") if t.strip()}
+        return publish.publish_all(con, tabelas, competencia, s)
     finally:
         con.close()
 
@@ -209,7 +240,7 @@ def cleanup_landing(competencia: str) -> list[str]:
     """Mantém só as ``landing_retention`` competências mais recentes de zips (nunca a atual)."""
     s = get_settings()
     comps = sorted(p.name for p in s.landing_dir.glob("????-??") if p.is_dir())
-    manter = set(comps[-s.landing_retention:]) | {competencia}
+    manter = set(comps[-max(1, s.landing_retention):]) | {competencia}
     removidas = []
     for c in comps:
         if c not in manter:

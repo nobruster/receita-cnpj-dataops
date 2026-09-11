@@ -56,6 +56,13 @@ def painel_mercado(uf: str | None = None, cnae: str | None = None, limite: int =
 
 
 @mcp.tool()
+def diferenca_competencias(anterior: str, atual: str, cnpj_basico: str | None = None, limite: int = 100) -> str:
+    """O que mudou entre duas competências do histórico (AAAA-MM): situação cadastral, estabelecimentos
+    novos e sócios que entraram/saíram. Informe cnpj_basico (8 posições) para uma empresa (KYC)."""
+    return _j(intents.diferenca_competencias(anterior, atual, cnpj_basico, limite))
+
+
+@mcp.tool()
 def resumo_competencia() -> str:
     """Placar da competência carregada: empresas, estabelecimentos, ativos, baixados, sócios, rejeitados."""
     return _j(intents.resumo_competencia())

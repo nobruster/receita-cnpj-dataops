@@ -33,8 +33,8 @@ class TriageState(BaseModel):
 def observed_keys(competencia: str) -> dict[str, str]:
     with ops.session() as conn:
         rows = conn.execute(
-            "SELECT failure_key, min(evidence_surface) AS surface FROM ops.incidents "
-            "WHERE competencia = %s AND origin IN ('pipeline', 'monitor') AND status = 'open' GROUP BY 1",
+            "SELECT failure_key, min(evidence_surface) AS surface FROM ops.incidents i "
+            f"WHERE competencia = %s AND origin IN ('pipeline', 'monitor') AND {ops.UNDIAGNOSED} GROUP BY 1",
             [competencia],
         ).fetchall()
     return {r["failure_key"]: r["surface"] for r in rows if r["failure_key"] not in IGNORED}

@@ -33,7 +33,7 @@ def test_segundo_escritor_recebe_mensagem_clara(data_dir):
     try:
         assert holder.stdout.readline().strip() == "ok"
         with pytest.raises(warehouse.WarehouseBusyError, match="único escritor"):
-            warehouse.connect_rw()
+            warehouse.connect_rw(wait_s=1)
     finally:
         holder.kill()
         holder.wait()
@@ -51,3 +51,19 @@ def test_retencao_do_landing(tmp_path, monkeypatch):
         assert sorted(p.name for p in get_settings().landing_dir.iterdir()) == ["2026-07", "2026-08"]
     finally:
         get_settings.cache_clear()
+
+
+def test_escritor_espera_leitor_soltar(data_dir):
+    path = get_settings().warehouse_path
+    warehouse.connect_rw().close()
+    leitor = subprocess.Popen(
+        [sys.executable, "-c", f"import duckdb,time; c=duckdb.connect(r'{path}', read_only=True); "
+                               "print('ok', flush=True); time.sleep(3)"], stdout=subprocess.PIPE, text=True)
+    try:
+        assert leitor.stdout.readline().strip() == "ok"
+        inicio = time.monotonic()
+        warehouse.connect_rw(wait_s=30).close()  # não falha: espera o leitor sair (achado 2)
+        assert time.monotonic() - inicio >= 1
+    finally:
+        leitor.kill()
+        leitor.wait()

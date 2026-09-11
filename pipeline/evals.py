@@ -131,23 +131,28 @@ def reprocessar(competencia: str) -> tuple[str, str, str, str]:
     """AC-6: recarrega raw + dbt e compara as métricas com as gravadas (sem abrir incidentes)."""
     meta = "métricas idênticas"
     with ops.session() as conn:
-        rodando = conn.execute(
-            "SELECT competencia FROM ops.competencias WHERE status IN ('baixando', 'carregando', 'transformada')"
-        ).fetchall()
+        rodando = conn.execute(  # qualquer status não final = ciclo em andamento (achado 7 do reviewer)
+            "SELECT competencia FROM ops.competencias WHERE NOT (status = ANY(%s)) AND competencia <> %s",
+            [list(ops.FINAL_STATUSES), ops.FONTE]).fetchall()
         antes = {(r["entidade"], r["metrica"]): r["valor"] for r in conn.execute(
             "SELECT entidade, metrica, valor FROM ops.dq_metrics WHERE competencia = %s", [competencia])}
     if rodando:
         return _row("AC-6 reprocessamento", "SKIP", f"DAG em andamento ({rodando[0]['competencia']})", meta)
     if not antes:
         return _row("AC-6 reprocessamento", "SKIP", "competência sem métricas gravadas", meta)
+    if competencia != _ultima():  # reprocessar mês antigo faria o warehouse regredir (achado 8)
+        return _row("AC-6 reprocessamento", "SKIP", "só a última competência concluída pode ser reprocessada", meta)
     s = steps.get_settings()
     con = connect_rw(s)
     try:
         loader.load_all(con, s.landing_dir / competencia, s.work_dir / competencia, competencia)
     finally:
         con.close()
-    for sel in steps.DBT_LAYERS:
-        steps.dbt(competencia, sel)
+    try:
+        for sel in steps.DBT_LAYERS:
+            steps.dbt(competencia, sel)  # sem @step: não muda status nem abre incidente
+    except Exception as exc:
+        return _row("AC-6 reprocessamento", "FAIL", f"dbt falhou ao reprocessar: {exc}", meta)
     con = connect_rw(s)
     try:
         depois = {(e, k): v for e, m in quality.measure(con, competencia).items() for k, v in m.items()}

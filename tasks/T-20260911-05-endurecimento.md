@@ -1,7 +1,7 @@
 ---
 id: T-20260911-05-endurecimento
 title: Endurecimento: escritor único, memória, retenção do landing (O5/O6/O7/G6)
-status: ready
+status: done
 format_version: 2
 effort: S
 budget_iterations: 15
@@ -25,9 +25,9 @@ security_class: (none)
 source_action_item: (none)
 linear_ref: (none)
 execution_backend: any
-signed_off: false
-signed_off_by: (none)
-signed_off_at: (none)
+signed_off: true
+signed_off_by: closers-gate
+signed_off_at: 2026-09-11T00:00:00Z
 ---
 
 # Endurecimento: escritor único, memória, retenção do landing (O5/O6/O7/G6)
