@@ -3,7 +3,8 @@
 
   Uso:  .\cnpj.ps1 <comando> [argumentos]
 
-    up                      Constrói as imagens e sobe tudo (Postgres, Airflow, Sentinel, MCP)
+    up                      Constrói as imagens e sobe o backbone v1 (Postgres + Airflow)
+    fase2                   Sobe também Sentinel (CrewAI) e MCP — fase 2
     down                    Para os containers (mantém os dados)
     status                  Containers + competências processadas + últimos incidentes
     logs [servico]          Acompanha os logs (padrão: airflow-scheduler)
@@ -12,7 +13,7 @@
     injetar CHAVE AAAA-MM   Injeta uma falha do chaos (ex.: invalid_cnpj, multi_failure_cascade)
     falhas                  Lista as falhas injetáveis
     sentinel                Roda o Sentinel agora sobre os incidentes pendentes
-    evals                   Mede os critérios de aceite (AC-1..AC-6)
+    evals [reprocessar]     Mede os critérios de aceite AC-1..AC-8 (reprocessar = também o AC-6)
     consulta "SQL"          SELECT somente leitura no DuckDB (gold/silver)
     psql                    Abre o psql no banco da plataforma
     limpar-teste            Apaga amostras, warehouse e ledger (antes da primeira carga real)
@@ -34,7 +35,11 @@ switch ($Comando) {
     "up" {
         if (-not (Test-Path .env)) { Copy-Item .env.example .env; Write-Host "Criei o .env a partir do .env.example. Edite as senhas e rode de novo." -ForegroundColor Yellow; exit 1 }
         docker compose up -d --build
-        Write-Host "`nAirflow: http://localhost:8080  |  MCP: http://localhost:8000/mcp" -ForegroundColor Green
+        Write-Host "`nAirflow: http://localhost:8080" -ForegroundColor Green
+    }
+    "fase2" {
+        docker compose --profile fase2 up -d --build
+        Write-Host "`nSentinel ativo  |  MCP: http://localhost:8000/mcp" -ForegroundColor Green
     }
     "down"   { docker compose down }
     "status" {
@@ -57,18 +62,21 @@ switch ($Comando) {
     }
     "amostra" {
         if (-not $Arg1) { throw "informe a competência: .\cnpj.ps1 amostra 2026-08" }
-        docker compose run --rm sentinel python -m chaos.cli sample --competencia $Arg1
+        docker compose --profile fase2 run --rm sentinel python -m chaos.cli sample --competencia $Arg1
     }
     "injetar" {
         if (-not $Arg1 -or -not $Arg2) { throw "uso: .\cnpj.ps1 injetar invalid_cnpj 2026-08" }
-        docker compose run --rm sentinel python -m chaos.cli inject $Arg1 --competencia $Arg2
+        docker compose --profile fase2 run --rm sentinel python -m chaos.cli inject $Arg1 --competencia $Arg2
     }
-    "falhas"   { docker compose run --rm sentinel python -m chaos.cli list }
-    "sentinel" { docker compose exec sentinel python -m sentinel.trigger --once }
-    "evals"    { docker compose exec mcp python -m pipeline.evals }
+    "falhas"   { docker compose --profile fase2 run --rm sentinel python -m chaos.cli list }
+    "sentinel" { docker compose --profile fase2 exec sentinel python -m sentinel.trigger --once }
+    "evals"    {
+        $extra = if ($Arg1 -eq "reprocessar") { "--reprocessar" } else { "" }
+        docker compose exec airflow-scheduler python -m pipeline.evals $extra
+    }
     "consulta" {
         if (-not $Arg1) { throw 'uso: .\cnpj.ps1 consulta "SELECT * FROM gold.gold_resumo_competencia"' }
-        docker compose exec -T mcp python -c "import sys; from sentinel.tools.readers import run_guarded_select as q; print(q(sys.argv[1]))" $Arg1
+        docker compose exec -T airflow-scheduler python -m intelligence.sql_guard $Arg1
     }
     "psql" {
         $u = Get-EnvValue "PG_USER" "cnpj"; $d = Get-EnvValue "PG_DB" "cnpj"
@@ -77,7 +85,7 @@ switch ($Comando) {
     "limpar-teste" {
         $ok = Read-Host "Isto apaga landing, warehouse e o ledger ops. Digite SIM para continuar"
         if ($ok -ne "SIM") { exit 0 }
-        docker compose run --rm --user 0 sentinel sh -c "rm -rf /data/landing/* /data/warehouse/* /data/work/* /data/sentinel/* /data/logs/*"
+        docker compose run --rm --user 0 --entrypoint sh airflow-init -c "rm -rf /data/landing/* /data/warehouse/* /data/work/* /data/history/* /data/sentinel/* /data/logs/*"
         $u = Get-EnvValue "PG_USER" "cnpj"; $d = Get-EnvValue "PG_DB" "cnpj"
         docker compose exec -T postgres psql -U $u -d $d -c "TRUNCATE ops.incidents, ops.dq_metrics, ops.competencias, ops.diagnoses RESTART IDENTITY;"
         Write-Host "Ambiente de teste limpo." -ForegroundColor Green

@@ -1,10 +1,11 @@
 # Plataforma DataOps do CNPJ — tudo on-premises.
 #
-#   docker compose up -d --build          # sobe Postgres + Airflow + Sentinel + MCP
-#   docker compose --profile ollama up -d # (opcional) LLM local no lugar da OpenAI
+#   docker compose up -d --build                  # v1: Postgres + Airflow (backbone)
+#   docker compose --profile fase2 up -d --build  # + Sentinel (CrewAI) e MCP — fase 2 (ADR-0003)
+#   docker compose --profile ollama up -d         # (opcional) LLM local no lugar da OpenAI
 #
 # Airflow:  http://localhost:8080   (usuário/senha do .env)
-# MCP:      http://localhost:8000/mcp
+# MCP:      http://localhost:8000/mcp  (fase 2)
 #
 # Volume de dados: por padrão um volume nomeado (rápido no Docker Desktop/WSL2).
 # Para ver os arquivos no Windows, troque CNPJ_DATA no .env por um caminho, ex.: D:/cnpj-data
@@ -37,6 +38,7 @@ x-airflow-common: &airflow-common
     - ./dags:/opt/airflow/dags
     - ./pipeline:/opt/airflow/project/pipeline:ro
     - ./transform:/opt/airflow/project/transform
+    - ./intelligence:/opt/airflow/project/intelligence:ro
     - airflow-logs:/opt/airflow/logs
     - ${CNPJ_DATA:-cnpj_data}:/data
   user: "${AIRFLOW_UID:-50000}:0"
@@ -166,11 +168,13 @@ services:
 
   sentinel:
     <<: *app-common
+    profiles: [fase2]
     command: ["python", "-m", "sentinel.trigger", "--watch", "--intervalo", "60"]
     restart: unless-stopped
 
   mcp:
     <<: *app-common
+    profiles: [fase2]
     command: ["python", "-m", "intelligence.server", "--http"]
     restart: unless-stopped
     ports:

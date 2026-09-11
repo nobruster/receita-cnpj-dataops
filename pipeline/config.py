@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     dq_volume_drop_pct: float = 5.0  # queda de linhas vs competência anterior
     dq_reject_rate_pct: float = 0.5  # % de linhas em *_rejects por entidade
     dq_stale_days: int = 45  # dias sem nova competência => stale_release
+    landing_retention: int = 2  # competências de zips mantidas no landing (~6 GB cada)
 
     # --- Sentinel (LLM configurável; padrão OpenAI via OPENAI_API_KEY) ---------
     # Tiering herdado do ws-3: gerente num modelo mais forte, especialistas no

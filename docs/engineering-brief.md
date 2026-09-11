@@ -59,7 +59,7 @@ O consumo é **manual e sem verificação**. Por isso, crédito, KYC/PLD e prosp
 ## Decisões do interrogatório
 | ID | Pergunta | Decisão | Dono |
 |---|---|---|---|
-| D-1 | Histórico para KYC/crédito | Foto mensal compacta, 12 meses (AC-8) | Bruno |
+| D-1 | Histórico para KYC/crédito | Foto mensal compacta, 12 meses (AC-8), formada **daqui para frente**: só a última competência é processada, sem carga retroativa (decisão de 11/09/2026) | Bruno |
 | D-2 | Contato de pessoa física (MEI/empresário individual) nas listas | **Manter como a Receita publica.** Risco LGPD aceito enquanto o uso for pessoal/portfólio | Bruno |
 | D-3 | Consulta em linguagem natural e agentes | **Fora do v1** (fase 2, depois de AC-1 provado) | Bruno |
 

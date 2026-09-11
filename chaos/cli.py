@@ -18,7 +18,7 @@ import argparse
 import random
 import shutil
 
-from chaos.failures import CASCADE_KEY, CASCADE_MEMBERS, FAILURES
+from chaos.failures import CASCADE_KEY, CASCADE_MEMBERS, FAILURES, SOURCE_KEYS
 from chaos.sample import generate
 from pipeline import ops
 from pipeline.config import get_settings
@@ -33,7 +33,8 @@ def inject(key: str, competencia: str, seed: int = 7) -> list[int]:
     for k in keys:
         f = FAILURES[k]
         detail = f.inject(landing, rng)
-        ids.append(ops.open_incident(k, "chaos", competencia, detail, f.evidence_surface))
+        alvo = ops.FONTE if k in SOURCE_KEYS else competencia
+        ids.append(ops.open_incident(k, "chaos", alvo, detail, f.evidence_surface))
     return ids
 
 

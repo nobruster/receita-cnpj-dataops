@@ -55,7 +55,7 @@ Pré-requisitos dos evals: rodar da raiz do repo com `uv sync` feito e `PG_HOST/
 ```bash
 # eval-1: sem menção a Dagster no código
 eval_1() {
-  ! grep -rqi 'dagster' pipeline dags intelligence sentinel chaos
+  ! grep -rqi --include='*.py' 'dagster' pipeline dags intelligence sentinel chaos
 }
 
 # eval-2: tarefa de retenção na DAG

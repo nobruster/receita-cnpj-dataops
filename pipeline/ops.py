@@ -27,6 +27,10 @@ from psycopg.rows import dict_row
 
 from pipeline.config import Settings, get_settings
 
+# Pseudo-competência para incidentes da FONTE (servidor fora do ar, publicação atrasada),
+# que não pertencem a um mês específico.
+FONTE = "fonte"
+
 DDL = """
 CREATE SCHEMA IF NOT EXISTS ops;
 
@@ -39,6 +43,9 @@ CREATE TABLE IF NOT EXISTS ops.competencias (
     finalizado_em TIMESTAMPTZ,
     detalhe       TEXT
 );
+
+ALTER TABLE ops.competencias ADD COLUMN IF NOT EXISTS detectado_em TIMESTAMPTZ;
+ALTER TABLE ops.competencias ADD COLUMN IF NOT EXISTS processamento_iniciado_em TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS ops.dq_metrics (
     competencia TEXT NOT NULL,
@@ -105,11 +112,33 @@ def set_status(competencia: str, status: str, detalhe: str = "", **extra: object
         )
 
 
+def mark_detected(competencia: str) -> None:
+    """Grava a hora da PRIMEIRA detecção (âncora do AC-3); reexecuções não a movem."""
+    with session() as conn:
+        conn.execute(
+            "INSERT INTO ops.competencias (competencia, status, detalhe, detectado_em) "
+            "VALUES (%s, 'descoberta', 'nova competência publicada', now()) "
+            "ON CONFLICT (competencia) DO UPDATE SET "
+            "detectado_em = COALESCE(ops.competencias.detectado_em, EXCLUDED.detectado_em)",
+            [competencia],
+        )
+
+
+def has_incident(failure_key: str, competencia: str) -> bool:
+    with session() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM ops.incidents WHERE failure_key = %s AND competencia = %s LIMIT 1",
+            [failure_key, competencia],
+        ).fetchone()
+    return row is not None
+
+
 def last_processed() -> str | None:
     """Última competência que chegou até o fim (status 'publicada')."""
     with session() as conn:
         row = conn.execute(
-            "SELECT max(competencia) AS c FROM ops.competencias WHERE status = 'publicada'"
+            "SELECT max(competencia) AS c FROM ops.competencias WHERE status = 'publicada' AND competencia <> %s",
+            [FONTE],
         ).fetchone()
     return row["c"] if row else None
 

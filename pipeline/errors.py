@@ -38,6 +38,10 @@ class LayoutDriftError(PipelineFailure):
     key = "layout_drift"
 
 
+class SourceUnavailableError(PipelineFailure):
+    key = "source_unavailable"
+
+
 def failure_line(key: str, **fields: object) -> str:
     extra = " ".join(f"{k}={str(v).replace(' ', '_')}" for k, v in fields.items())
     return f"PIPELINE_FAILURE key={key} {extra}".strip()

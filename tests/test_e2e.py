@@ -8,16 +8,17 @@ de um LLM de verdade é medida à parte (``python -m sentinel.trigger`` com chav
 
 from __future__ import annotations
 
+import os
 import shutil
 
 import pytest
 
 from chaos.cli import inject
-from chaos.failures import CASCADE_KEY, FAILURES
+from chaos.failures import CASCADE_KEY, FAILURES, SOURCE_KEYS
 from chaos.sample import generate
 from pipeline import ops, steps
 from pipeline.config import get_settings
-from pipeline.errors import PipelineFailure
+from pipeline.errors import PipelineFailure, SourceUnavailableError
 from pipeline.warehouse import connect_ro
 from sentinel.trigger import run_case
 
@@ -32,6 +33,7 @@ def _run_pipeline(comp: str) -> None:
         for sel in steps.DBT_LAYERS:
             steps.transform(comp, sel)
         steps.check_quality(comp)
+        steps.archive_history(comp)
         steps.finish(comp)
     except PipelineFailure:
         pass  # já virou incidente origin='pipeline' e status 'falhou'
@@ -65,6 +67,9 @@ def test_baseline_limpa_sem_incidentes(baseline):
         con.close()
     assert rej == 0 and gold > EMPRESAS and alfa > 0
     assert ops.last_processed() == "2026-07"
+    with ops.session() as conn:  # âncoras do AC-2 e do AC-3
+        info = conn.execute("SELECT * FROM ops.competencias WHERE competencia = '2026-07'").fetchone()
+    assert info["detectado_em"] and info["processamento_iniciado_em"] and info["finalizado_em"]
 
 
 @pytest.mark.parametrize("key", [*FAILURES, CASCADE_KEY])
@@ -72,7 +77,20 @@ def test_injetar_detectar_pontuar(baseline, key):
     comp = "2026-08"
     _fresh(comp)
     inject(key, comp)
-    _run_pipeline(comp)
+    if key in SOURCE_KEYS:  # a falha é da fonte: descoberta sem modo offline, URL inalcançável
+        os.environ.update(OFFLINE_MODE="false", RFB_WEBDAV_URL="http://127.0.0.1:9/public.php/webdav",
+                          RFB_CONNECT_TIMEOUT="2")
+        get_settings.cache_clear()
+        try:
+            with pytest.raises(SourceUnavailableError):
+                steps.discover()
+        finally:
+            os.environ.update(OFFLINE_MODE="true")
+            os.environ.pop("RFB_WEBDAV_URL")
+            get_settings.cache_clear()
+        comp = ops.FONTE
+    else:
+        _run_pipeline(comp)
     res = run_case(comp)
     assert res.score.match == 1.0, (key, res.route, res.observed, res.score)
     if key in FAILURES and FAILURES[key].detected_by != "log_analyst":

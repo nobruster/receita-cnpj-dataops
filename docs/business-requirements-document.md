@@ -317,6 +317,8 @@ Como é projeto de portfólio, a análise é de **custo total para operar** e **
 
 ### 8.1 Critérios de aceite (verificados por medição, nunca declarados)
 
+> **Nota (Passo 4 do Converge):** a fonte canônica dos critérios de aceite passou a ser o `engineering-brief.md` (AC-1..AC-8), cuja numeração difere desta tabela original. A nota do Sentinel virou o critério **F2-1** da fase 2 (ADR-0003).
+
 | AC | Prova | Meta | Como medir |
 |---|---|---|---|
 | **AC-1** Completude | 37/37 arquivos carregados; linhas do raw iguais às linhas do CSV | Erros de parsing ≤ 0,001% | `raw.raw_load_log` |

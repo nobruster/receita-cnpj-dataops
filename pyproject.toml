@@ -26,6 +26,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
+extend-exclude = [".claude"]
 target-version = "py312"
 
 [tool.ruff.lint]

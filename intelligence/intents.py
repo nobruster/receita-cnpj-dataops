@@ -132,3 +132,44 @@ def schema_info() -> dict[str, list[str]]:
     for r in rows:
         out.setdefault(r["table_name"], []).append(r["column_name"])
     return out
+
+
+def diferenca_competencias(anterior: str, atual: str, cnpj_basico: str | None = None,
+                           limite: int = 100) -> dict[str, Any]:
+    """AC-8: o que mudou entre duas competências do histórico (situação cadastral e quadro societário).
+
+    Lê só o Parquet do histórico (não trava o warehouse). ``cnpj_basico`` restringe a uma empresa (KYC).
+    """
+    from pipeline import history
+
+    lim = max(1, min(int(limite), MAX_LIMIT))
+    ea, eb = history.read_sql("estabelecimentos", anterior), history.read_sql("estabelecimentos", atual)
+    sa, sb = history.read_sql("socios", anterior), history.read_sql("socios", atual)
+    filtro, params = "", []
+    if cnpj_basico:
+        filtro = " AND x.cnpj_basico = ?"
+        params = [cnpjlib.normalize(cnpj_basico)[:8]]
+    chave_socio = "x.cnpj_basico, x.nome_socio, x.cnpj_cpf_socio, x.qualificacao_socio"
+    con = duckdb.connect()
+    try:
+        def q(sql: str) -> list[dict[str, Any]]:
+            cur = con.execute(sql, params)
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
+
+        mudancas = q(
+            f"SELECT x.cnpj, a.situacao_cadastral AS situacao_anterior, x.situacao_cadastral AS situacao_atual, "
+            f"x.data_situacao_cadastral FROM {eb} x JOIN {ea} a USING (cnpj) "
+            f"WHERE a.situacao_cadastral IS DISTINCT FROM x.situacao_cadastral{filtro} ORDER BY x.cnpj LIMIT {lim}")
+        novos = q(f"SELECT x.cnpj, x.data_inicio_atividade FROM {eb} x ANTI JOIN {ea} a USING (cnpj) "
+                  f"WHERE true{filtro} ORDER BY x.cnpj LIMIT {lim}")
+        entradas = q(f"SELECT {chave_socio} FROM {sb} x ANTI JOIN {sa} a "
+                     f"USING (cnpj_basico, nome_socio, cnpj_cpf_socio, qualificacao_socio) WHERE true{filtro} "
+                     f"ORDER BY 1, 2 LIMIT {lim}")
+        saidas = q(f"SELECT {chave_socio} FROM {sa} x ANTI JOIN {sb} b "
+                   f"USING (cnpj_basico, nome_socio, cnpj_cpf_socio, qualificacao_socio) WHERE true{filtro} "
+                   f"ORDER BY 1, 2 LIMIT {lim}")
+    finally:
+        con.close()
+    return {"anterior": anterior, "atual": atual, "mudancas_situacao": mudancas, "estabelecimentos_novos": novos,
+            "socios_entraram": entradas, "socios_sairam": saidas}

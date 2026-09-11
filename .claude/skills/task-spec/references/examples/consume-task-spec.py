@@ -23,9 +23,9 @@ from __future__ import annotations
 import json
 import re
 import sys
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     import yaml
@@ -69,12 +69,12 @@ class TaskSpec:
     format_version: Any
     execution_backend: str
     signed_off: bool
-    frontmatter: Dict[str, Any]
-    validation_card: Dict[str, Any] = field(default_factory=dict)
-    eval_ids: List[str] = field(default_factory=list)
+    frontmatter: dict[str, Any]
+    validation_card: dict[str, Any] = field(default_factory=dict)
+    eval_ids: list[str] = field(default_factory=list)
 
 
-def _split_frontmatter(text: str) -> (Dict[str, Any], str):
+def _split_frontmatter(text: str) -> (dict[str, Any], str):
     if not text.startswith("---"):
         raise ValueError("file does not start with YAML frontmatter '---'")
     parts = text.split("---\n", 2)
@@ -83,7 +83,7 @@ def _split_frontmatter(text: str) -> (Dict[str, Any], str):
     return _yaml_load(parts[1]) or {}, parts[2]
 
 
-def _extract_validation_card(body: str) -> Dict[str, Any]:
+def _extract_validation_card(body: str) -> dict[str, Any]:
     marker = "## Validation Card"
     idx = body.find(marker)
     if idx == -1:
@@ -99,7 +99,7 @@ def _extract_validation_card(body: str) -> Dict[str, Any]:
     return _yaml_load(after[:end]) or {}
 
 
-def _extract_eval_ids(body: str) -> List[str]:
+def _extract_eval_ids(body: str) -> list[str]:
     marker = "## Success Criteria"
     idx = body.find(marker)
     if idx == -1:
@@ -110,7 +110,7 @@ def _extract_eval_ids(body: str) -> List[str]:
     return [m.group(1) for m in EVAL_FN_RE.finditer(block)]
 
 
-def _validate(instance: Dict[str, Any], schema_path: Path, label: str) -> None:
+def _validate(instance: dict[str, Any], schema_path: Path, label: str) -> None:
     try:
         from jsonschema import Draft202012Validator
     except ImportError:
@@ -147,7 +147,7 @@ def parse(path: Path) -> TaskSpec:
     )
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = argv if argv is not None else sys.argv[1:]
     if not args:
         print("Usage: consume-task-spec.py <path/to/T-*.md>", file=sys.stderr)

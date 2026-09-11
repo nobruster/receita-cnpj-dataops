@@ -166,6 +166,12 @@ def _corrupt_zip(landing: Path, rng: random.Random) -> str:
     return "Estabelecimentos6.zip truncado pela metade (download interrompido)"
 
 
+def _source_unavailable(landing: Path, rng: random.Random) -> str:
+    # Não mexe no landing: a falha é da FONTE. Quem roda o ciclo aponta RFB_WEBDAV_URL
+    # para um endereço inalcançável (o e2e faz isso; no Docker, edite o .env).
+    return "servidor WebDAV da Receita inalcançável (RFB_WEBDAV_URL inválida)"
+
+
 FAILURES: dict[str, Failure] = {
     f.key: f
     for f in (
@@ -193,9 +199,13 @@ FAILURES: dict[str, Failure] = {
                 "pipeline_logs", "Tool reliability", _missing_file),
         Failure("corrupt_zip", "Zip corrompido", "log_analyst",
                 "pipeline_logs", "Tool reliability", _corrupt_zip),
+        Failure("source_unavailable", "Fonte da Receita fora do ar", "log_analyst",
+                "pipeline_logs", "Tool reliability", _source_unavailable),
     )
 }
 
 CASCADE_KEY = "multi_failure_cascade"
 CASCADE_MEMBERS: tuple[str, ...] = ("invalid_cnpj", "orphan_socio", "volume_drop")
+# Falhas da FONTE não pertencem a uma competência: a verdade vai para a pseudo-competência ``fonte``.
+SOURCE_KEYS: frozenset[str] = frozenset({"source_unavailable"})
 PIPELINE_KEYS: frozenset[str] = frozenset(k for k, f in FAILURES.items() if f.detected_by == "log_analyst")

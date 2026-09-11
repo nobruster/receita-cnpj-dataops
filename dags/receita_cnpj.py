@@ -10,7 +10,7 @@ DuckDB aceita um único processo escritor. A lógica vive em ``pipeline.steps``
 (testável sem Airflow); esta DAG só orquestra.
 
     descobrir → baixar → carregar_raw → dbt_bronze → dbt_silver → dbt_gold
-              → qualidade → publicar_postgres → concluir
+              → qualidade → arquivar_historico → publicar_postgres → limpar_landing → concluir
 """
 
 from __future__ import annotations
@@ -50,7 +50,9 @@ def receita_cnpj_mensal():
         print(alvo["motivo"])
         return alvo["competencia"]
 
-    @task(retries=3, retry_delay=timedelta(minutes=15), execution_timeout=timedelta(hours=8))
+    # Orçamento do AC-3 (≤ 24 h da detecção): 6 h x (1 + 2 retries) ≈ 18 h de download
+    # retomável + ≤ 4 h de processamento (AC-2). Ver docs/converge/p4-consensus.md (O2).
+    @task(retries=2, retry_delay=timedelta(minutes=10), execution_timeout=timedelta(hours=6))
     def baixar(competencia: str) -> dict:
         from pipeline import steps
 
@@ -77,11 +79,23 @@ def receita_cnpj_mensal():
 
         return steps.check_quality(competencia)
 
+    @task(pool=POOL, execution_timeout=timedelta(hours=1))
+    def arquivar_historico(competencia: str) -> dict:
+        from pipeline import steps
+
+        return steps.archive_history(competencia)
+
     @task(pool=POOL, execution_timeout=timedelta(hours=2))
     def publicar_postgres(competencia: str) -> dict:
         from pipeline import steps
 
         return steps.publish_postgres(competencia)
+
+    @task
+    def limpar_landing(competencia: str) -> list[str]:
+        from pipeline import steps
+
+        return steps.cleanup_landing(competencia)
 
     @task(outlets=[GOLD])
     def concluir(competencia: str) -> str:
@@ -97,9 +111,11 @@ def receita_cnpj_mensal():
     silver = dbt_task("silver", "silver")(comp)
     gold = dbt_task("gold", "gold")(comp)
     dq = qualidade(comp)
+    hist = arquivar_historico(comp)
     pub = publicar_postgres(comp)
+    limpa = limpar_landing(comp)
     fim = concluir(comp)
-    raw >> bronze >> silver >> gold >> dq >> pub >> fim
+    raw >> bronze >> silver >> gold >> dq >> hist >> pub >> limpa >> fim
 
 
 receita_cnpj_mensal()

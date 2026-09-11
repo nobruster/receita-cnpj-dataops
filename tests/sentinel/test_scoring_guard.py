@@ -1,9 +1,9 @@
 """Oráculo, guardrail e guarda de SQL — determinísticos, sem LLM e sem banco."""
 
+from intelligence.sql_guard import FORBIDDEN, run_guarded_select
 from sentinel.guardrails import validate_postmortem
 from sentinel.models import Diagnosis, Postmortem
 from sentinel.scoring import score
-from sentinel.tools.readers import FORBIDDEN, run_guarded_select
 
 
 def d(key, surface="", subs=None):

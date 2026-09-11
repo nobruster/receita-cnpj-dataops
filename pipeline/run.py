@@ -32,8 +32,10 @@ def main() -> None:
     for select in steps.DBT_LAYERS:
         steps.transform(comp, select)
     print("incidentes de qualidade:", steps.check_quality(comp))
+    print("histórico:", steps.archive_history(comp))
     if not a.sem_publicar:
         print("publicado:", steps.publish_postgres(comp))
+    print("landing limpo:", steps.cleanup_landing(comp))
     steps.finish(comp)
 
 

@@ -12,17 +12,18 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from pipeline import ops, publish, quality
+from pipeline import history, ops, publish, quality
 from pipeline.config import get_settings
-from pipeline.errors import PipelineFailure, setup_logging
+from pipeline.errors import PipelineFailure, SourceUnavailableError, setup_logging
 from pipeline.receita import loader, webdav
 from pipeline.receita.layout import validate_competencia
 from pipeline.warehouse import connect_rw
@@ -55,12 +56,18 @@ def step[F: Callable[..., Any]](fn: F) -> F:
 
 
 def discover(force: str | None = None) -> dict[str, Any]:
-    """Qual competência processar? A forçada, ou a última publicada ainda não concluída."""
+    """Qual competência processar? A forçada, ou a última publicada ainda não concluída.
+
+    Fonte fora do ar vira incidente ``source_unavailable`` (pseudo-competência
+    ``fonte``) e a tarefa falha; publicação atrasada vira ``stale_release``, uma vez
+    por competência (AC-7). A hora da detecção é a âncora do AC-3.
+    """
     s = get_settings()
     setup_logging(s.logs_dir)
     ops.ensure_schema()
     if force:
         comp = validate_competencia(force)
+        ops.mark_detected(comp)
         return {"competencia": comp, "skip": False, "motivo": "forçada por parâmetro"}
     if s.offline_mode:
         locais = sorted(p.name for p in s.landing_dir.glob("????-??") if p.is_dir())
@@ -68,12 +75,33 @@ def discover(force: str | None = None) -> dict[str, Any]:
             raise RuntimeError(f"modo offline e nenhuma competência em {s.landing_dir}")
         comp = locais[-1]
     else:
-        comp = webdav.latest_competencia(s)
+        try:
+            comp = webdav.latest_competencia(s)
+        except Exception as exc:  # rede, TLS, 4xx/5xx, XML inválido, pasta vazia
+            err = SourceUnavailableError(f"fonte da Receita indisponível: {exc}", url=s.rfb_webdav_url)
+            log.error(err.contract_line())
+            ops.open_incident(err.key, "pipeline", ops.FONTE, str(err), "pipeline_logs")
+            ops.set_status(ops.FONTE, "falhou", str(err)[:500])
+            raise err from exc
+        _check_stale(comp, s.dq_stale_days)
     feito = ops.last_processed()
     if feito and comp <= feito:
         return {"competencia": comp, "skip": True, "motivo": f"{comp} já processada (última: {feito})"}
-    ops.set_status(comp, "descoberta", "nova competência publicada")
+    ops.mark_detected(comp)
     return {"competencia": comp, "skip": False, "motivo": f"nova competência (última processada: {feito})"}
+
+
+def _check_stale(latest: str, stale_days: int, today: date | None = None) -> bool:
+    """Abre ``stale_release`` se a competência mais nova ficou velha demais (uma vez por competência)."""
+    hoje = today or datetime.now(UTC).date()
+    ano, mes = map(int, latest.split("-"))
+    idade = (hoje - date(ano, mes, 1)).days
+    if idade <= stale_days or ops.has_incident("stale_release", latest):
+        return False
+    msg = f"última competência publicada é {latest} ({idade} dias; limite {stale_days})"
+    log.warning("DQ_FINDING key=stale_release %s", msg)
+    ops.open_incident("stale_release", "monitor", latest, msg, "ops.competencias")
+    return True
 
 
 @step
@@ -102,6 +130,7 @@ def download(competencia: str) -> dict[str, Any]:
 @step
 def load_raw(competencia: str) -> dict[str, Any]:
     s = get_settings()
+    ops.set_status(competencia, "carregando", "carga raw", processamento_iniciado_em=_now())
     landing = s.landing_dir / competencia
     con = connect_rw(s)
     try:
@@ -153,6 +182,17 @@ def check_quality(competencia: str) -> list[int]:
 
 
 @step
+def archive_history(competencia: str) -> dict[str, Any]:
+    """AC-8: foto Parquet do silver aceito + retenção de 12 competências."""
+    con = connect_rw()
+    try:
+        linhas = history.archive(con, competencia)
+    finally:
+        con.close()
+    return {"linhas": linhas, "removidas": history.apply_retention()}
+
+
+@step
 def publish_postgres(competencia: str) -> dict[str, int]:
     s = get_settings()
     if not s.publish_enabled:
@@ -163,6 +203,22 @@ def publish_postgres(competencia: str) -> dict[str, int]:
                 for t in s.publish_tables.split(",") if t.strip()}
     finally:
         con.close()
+
+
+def cleanup_landing(competencia: str) -> list[str]:
+    """Mantém só as ``landing_retention`` competências mais recentes de zips (nunca a atual)."""
+    s = get_settings()
+    comps = sorted(p.name for p in s.landing_dir.glob("????-??") if p.is_dir())
+    manter = set(comps[-s.landing_retention:]) | {competencia}
+    removidas = []
+    for c in comps:
+        if c not in manter:
+            shutil.rmtree(s.landing_dir / c, ignore_errors=True)
+            removidas.append(c)
+    shutil.rmtree(s.work_dir / competencia, ignore_errors=True)  # CSVs temporários da carga
+    if removidas:
+        log.info("landing: removidas %s (retenção de %d)", removidas, s.landing_retention)
+    return removidas
 
 
 def finish(competencia: str) -> None:
