@@ -1,0 +1,11 @@
+receita_cnpj:
+  target: prod
+  outputs:
+    prod:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_DATABASE', '/data/warehouse/cnpj.duckdb') }}"
+      threads: 1            # DuckDB é single-writer: um modelo por vez
+      settings:
+        memory_limit: "{{ env_var('DUCKDB_MEMORY_LIMIT', '8GB') }}"
+        threads: "{{ env_var('DUCKDB_THREADS', '4') }}"
+        preserve_insertion_order: false

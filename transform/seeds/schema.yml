@@ -1,0 +1,14 @@
+version: 2
+seeds:
+  - name: dom_porte
+    description: Porte da empresa (layout da Receita; 00 não consta no SERPRO mas aparece no arquivo).
+  - name: dom_situacao_cadastral
+    description: Situação cadastral (domínio completo do SERPRO, inclui 05 Ativa não regular).
+  - name: dom_matriz_filial
+    description: Identificador matriz/filial.
+  - name: dom_identificador_socio
+    description: Tipo de sócio (layout da Receita).
+  - name: dom_faixa_etaria
+    description: Faixa etária do sócio (layout da Receita).
+  - name: dom_uf
+    description: 27 UFs + EX (convenção da Receita para exterior).

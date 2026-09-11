@@ -1,0 +1,84 @@
+version: 2
+
+# reject_rule == failure_key do Sentinel (costura de detecção herdada do ws-3).
+models:
+- name: silver_estabelecimentos
+  description: Estabelecimentos aceitos (sem reject_rule), com flags de órfão de domínio.
+  columns:
+  - name: cnpj
+    data_tests:
+    - unique
+    - not_null
+- name: silver_estabelecimentos_rejects
+  columns:
+  - name: reject_rule
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - invalid_cnpj
+          - duplicate_key
+          - invalid_date
+          - invalid_domain
+          - invalid_capital
+          - encoding_mojibake
+          - orphan_socio
+- name: silver_empresas
+  columns:
+  - name: cnpj_basico
+    data_tests:
+    - unique
+    - not_null
+- name: silver_empresas_rejects
+  columns:
+  - name: reject_rule
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - invalid_cnpj
+          - duplicate_key
+          - invalid_date
+          - invalid_domain
+          - invalid_capital
+          - encoding_mojibake
+          - orphan_socio
+- name: silver_socios
+  columns:
+  - name: cnpj_basico
+    data_tests:
+    - not_null
+- name: silver_socios_rejects
+  columns:
+  - name: reject_rule
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - invalid_cnpj
+          - duplicate_key
+          - invalid_date
+          - invalid_domain
+          - invalid_capital
+          - encoding_mojibake
+          - orphan_socio
+- name: silver_simples
+  columns:
+  - name: cnpj_basico
+    data_tests:
+    - unique
+    - not_null
+- name: silver_simples_rejects
+  columns:
+  - name: reject_rule
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - invalid_cnpj
+          - duplicate_key
+          - invalid_date
+          - invalid_domain
+          - invalid_capital
+          - encoding_mojibake
+          - orphan_socio

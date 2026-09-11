@@ -1,0 +1,5 @@
+# dbt roda num venv separado dentro da imagem do Airflow (evita conflito de dependências).
+# O duckdb precisa ser a MESMA versão do pipeline: os dois escrevem no mesmo arquivo.
+dbt-core==1.12.4
+dbt-duckdb==1.11.0
+duckdb==1.5.5

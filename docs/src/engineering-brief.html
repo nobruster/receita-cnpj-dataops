@@ -1,0 +1,133 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Engineering Brief — CNPJ</title>
+<style>
+@page{size:A4;margin:16mm 15mm 18mm 15mm}
+:root{--ink:#1b2330;--mut:#5b6573;--red:#b8483d;--blue:#3a6a8f;--green:#237a60;--line:#e3e6ea;--soft:#f3f6f8}
+body{font-family:'Inter','Segoe UI',Helvetica,Arial,sans-serif;color:var(--ink);font-size:10.3pt;line-height:1.5;margin:0}
+.bar{display:flex;height:10px;border-radius:3px;overflow:hidden;margin-bottom:26px}.bar i{flex:1}.bar i:nth-child(1){background:var(--red)}.bar i:nth-child(2){background:var(--blue)}.bar i:nth-child(3){background:var(--green)}
+.kick{font-family:'DejaVu Sans Mono',monospace;letter-spacing:.18em;font-size:8pt;color:var(--blue);text-transform:uppercase}
+h1{font-size:34pt;line-height:1.05;margin:10px 0 14px;font-weight:700;letter-spacing:-.02em}h1 em{color:var(--red);font-style:normal}
+.lede{font-size:12pt;color:#3a4350;max-width:78%}
+.meta{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:10px;margin:22px 0}
+.meta div{padding:10px 12px;border-right:1px solid var(--line)}.meta div:last-child{border:0}.meta b{display:block;font-size:7pt;letter-spacing:.12em;color:#8a93a0;font-weight:500;text-transform:uppercase}
+.vit{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.vit div{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px}
+.vit .n{font-family:'DejaVu Sans Mono',monospace;font-size:13pt;margin-top:8px}.bad{color:var(--red)}.good{color:var(--green)}
+h2{font-size:17pt;margin:26px 0 8px;border-bottom:1.5px solid var(--ink);padding-bottom:4px;display:flex;justify-content:space-between;align-items:baseline;page-break-after:avoid}
+h2 small{font-family:'DejaVu Sans Mono',monospace;font-size:8pt;color:#8a93a0;font-weight:400}h2 span.num{color:var(--blue);font-family:'DejaVu Sans Mono',monospace;font-size:11pt;margin-right:10px}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}.card{border:1px solid var(--line);border-left:4px solid var(--red);border-radius:8px;padding:10px 12px;page-break-inside:avoid}
+.card h4{margin:0 0 4px;font-size:10.5pt}.card h4 span{font-family:'DejaVu Sans Mono',monospace;font-size:7.5pt;color:var(--red);letter-spacing:.1em;margin-left:6px}
+.card p{margin:0;color:#3a4350}.card .m{font-family:'DejaVu Sans Mono',monospace;font-size:8.5pt;margin-top:6px;color:#555}
+.scope{display:grid;grid-template-columns:1fr 1fr;gap:12px}.scope>div{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.scope h4{margin:0;padding:8px 12px;font-size:10pt}.in h4{background:#e3f1ec;color:var(--green)}.out h4{background:#f6e3e1;color:var(--red)}
+.scope ul{margin:0;padding:8px 12px 10px 26px}.scope li{margin:4px 0}.scope li small{display:block;color:var(--mut)}
+table{width:100%;border-collapse:collapse;font-size:8.8pt;margin:8px 0}th{background:var(--ink);color:#fff;text-align:left;padding:7px 8px;font-weight:600;font-size:8pt;letter-spacing:.04em}
+td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}tr{page-break-inside:avoid}td b.id{color:var(--blue);font-family:'DejaVu Sans Mono',monospace}
+.fig{font-family:'DejaVu Sans Mono',monospace;font-size:7.3pt;color:#8a93a0;letter-spacing:.06em;text-transform:uppercase;margin:4px 0 12px}
+.q{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;page-break-inside:avoid}.q b{color:var(--blue)}
+.pb{page-break-before:always}
+.scope,svg,.vit,.meta{page-break-inside:avoid}
+td:first-child{white-space:nowrap}
+.foot{margin-top:20px;border-top:1px solid var(--line);padding-top:6px;font-size:8pt;color:#8a93a0;display:flex;justify-content:space-between}
+</style></head><body>
+
+<div class="bar"><i></i><i></i><i></i></div>
+<div class="kick">Engineering Brief · Definição do problema · Passo 1 de 4 (Converge)</div>
+<h1>Uma base pública,<br>decisões <em>no escuro</em>.</h1>
+<p class="lede">Todo mês a Receita Federal publica o cadastro completo das empresas brasileiras. Quem decide crédito, conformidade e prospecção depende dele — mas hoje o consome sem saber se está completo, atual ou correto. Este brief define esse problema: quem sofre, o que "resolvido" precisa provar e o que <i>não</i> estamos resolvendo agora. Ele deliberadamente não nomeia tecnologia; a solução vem no Passo 2.</p>
+<div class="meta"><div><b>Preparado por</b>Bruno Nunes · Engenharia de Dados</div><div><b>Propósito</b>Consenso sobre o problema</div><div><b>Escopo</b>Problema, não solução</div><div><b>Data</b>11 de setembro de 2026</div></div>
+<div class="kick" style="color:#8a93a0;margin-bottom:8px">Três sinais vitais — como estão hoje → como precisam ficar</div>
+<div class="vit">
+<div>Tempo da publicação da Receita até a base estar utilizável<div class="n"><span class="bad">indefinido</span> → <span class="good">≤ 24 h</span></div></div>
+<div>Linhas verificadas por regra de qualidade explícita<div class="n"><span class="bad">0%</span> → <span class="good">100%</span></div></div>
+<div>Competências processadas sem intervenção manual<div class="n"><span class="bad">0</span> → <span class="good">≥ 90%</span></div></div>
+</div>
+
+<h2 class="pb"><span><span class="num">01</span>O problema, em termos simples</span><small>causa raiz</small></h2>
+<p>A fonte é <b>grande, instável e imperfeita</b>: 37 arquivos por mês (cerca de 6 GB compactados, dezenas de milhões de linhas), publicados num servidor lento que já mudou de endereço, com layout sujeito a mudança, um formato de CNPJ novo desde julho de 2026 e defeitos que a própria Receita publica (códigos sem descrição, CEPs sem o zero à esquerda). Do outro lado, o consumo é <b>manual e sem verificação</b>: alguém precisa lembrar de baixar, carregar e conferir.</p>
+<p>Esse descompasso é a causa raiz. Tudo o que vem abaixo — base velha, base quebrada, defeito que ninguém vê, trabalho repetido — é sintoma dele. A correção não é um script mais rápido: é tornar o ciclo mensal <b>automático, completo e verificável</b>, de forma que cada decisão saiba em que dado está apoiada.</p>
+<svg viewBox="0 0 720 250" width="100%" style="margin:6px 0">
+<rect x="235" y="8" width="250" height="52" rx="10" fill="#1b2330"/><text x="360" y="30" fill="#fff" font-size="14" font-weight="700" text-anchor="middle" font-family="Inter,Arial">Fonte grande e instável</text><text x="360" y="48" fill="#c9d1db" font-size="10" text-anchor="middle" font-family="Inter,Arial">× consumo manual e sem verificação</text>
+<g font-family="Inter,Arial" font-size="11">
+<path d="M360 60 C360 80,90 80,90 100" stroke="#9aa5b1" fill="none"/><path d="M360 60 C360 80,270 80,270 100" stroke="#9aa5b1" fill="none"/><path d="M360 60 C360 80,450 80,450 100" stroke="#9aa5b1" fill="none"/><path d="M360 60 C360 80,630 80,630 100" stroke="#9aa5b1" fill="none"/>
+<rect x="12" y="100" width="156" height="58" rx="8" fill="#f6e3e1" stroke="#e3b7b1"/><text x="90" y="122" text-anchor="middle" fill="#b8483d" font-weight="700">Base velha</text><text x="90" y="140" text-anchor="middle" fill="#6b3a35" font-size="9.5">competência nova só quando</text><text x="90" y="152" text-anchor="middle" fill="#6b3a35" font-size="9.5">alguém lembra</text>
+<rect x="192" y="100" width="156" height="58" rx="8" fill="#f6e3e1" stroke="#e3b7b1"/><text x="270" y="122" text-anchor="middle" fill="#b8483d" font-weight="700">Base quebrada</text><text x="270" y="140" text-anchor="middle" fill="#6b3a35" font-size="9.5">arquivo faltando, truncado,</text><text x="270" y="152" text-anchor="middle" fill="#6b3a35" font-size="9.5">layout mudou — sem aviso</text>
+<rect x="372" y="100" width="156" height="58" rx="8" fill="#f6e3e1" stroke="#e3b7b1"/><text x="450" y="122" text-anchor="middle" fill="#b8483d" font-weight="700">Defeito invisível</text><text x="450" y="140" text-anchor="middle" fill="#6b3a35" font-size="9.5">CNPJ inválido, data impossível,</text><text x="450" y="152" text-anchor="middle" fill="#6b3a35" font-size="9.5">sócio sem empresa entram calados</text>
+<rect x="552" y="100" width="156" height="58" rx="8" fill="#f6e3e1" stroke="#e3b7b1"/><text x="630" y="122" text-anchor="middle" fill="#b8483d" font-weight="700">Esforço repetido</text><text x="630" y="140" text-anchor="middle" fill="#6b3a35" font-size="9.5">baixar, carregar, conferir</text><text x="630" y="152" text-anchor="middle" fill="#6b3a35" font-size="9.5">todo mês, à mão</text>
+<g fill="#3a4350" font-size="9.5" text-anchor="middle"><text x="90" y="186">crédito para empresa</text><text x="90" y="199">já baixada</text><text x="270" y="186">lista de prospecção</text><text x="270" y="199">com buracos</text><text x="450" y="186">KYC sobre quadro</text><text x="450" y="199">societário incompleto</text><text x="630" y="186">tempo que não vai</text><text x="630" y="199">para análise</text></g>
+<g stroke="#9aa5b1"><line x1="90" y1="158" x2="90" y2="174"/><line x1="270" y1="158" x2="270" y2="174"/><line x1="450" y1="158" x2="450" y2="174"/><line x1="630" y1="158" x2="630" y2="174"/></g>
+<rect x="12" y="214" width="696" height="30" rx="8" fill="#1b2330"/><text x="360" y="234" text-anchor="middle" fill="#fff" font-size="11">Resultado: decisões de crédito, conformidade e venda apoiadas em dado de qualidade desconhecida</text>
+</g></svg>
+<div class="fig">Fig. 1 — Um descompasso na origem se desdobra em quatro dores e chega às decisões.</div>
+
+<h2><span><span class="num">02</span>Quem sofre, e como</span><small>mapa de impacto</small></h2>
+<div class="cards">
+<div class="card"><h4>Analista de crédito<span>RISCO</span></h4><p>Precisa de situação cadastral, idade, porte, capital e Simples/MEI de um CNPJ. Se a base está atrasada, aprova para empresa baixada ou inapta; se está incompleta, recusa quem não devia.</p><div class="m">decisão por CNPJ · segundos por consulta</div></div>
+<div class="card"><h4>Analista de KYC/PLD<span>CONFORMIDADE</span></h4><p>Precisa do quadro societário e das empresas interligadas (sócio pessoa jurídica). Sem histórico, não enxerga quem entrou ou saiu da sociedade; sem ligação entre arquivos, monta a rede à mão.</p><div class="m">quadro atual + mudanças em 12 meses</div></div>
+<div class="card"><h4>Time comercial<span>RECEITA</span></h4><p>Precisa de listas de empresas ativas por setor, região, porte e abertura recente. Listas com empresas baixadas desperdiçam esforço de venda.</p><div class="m">listas por CNAE · UF · município · porte</div></div>
+<div class="card"><h4>Engenharia de dados<span>OPERAÇÃO</span></h4><p>Carrega o ciclo mensal nas costas: descobrir a publicação, baixar 6 GB de um servidor instável, carregar, conferir e explicar números estranhos depois.</p><div class="m">trabalho manual todo mês · falhas descobertas tarde</div></div>
+</div>
+
+<h2><span><span class="num">03</span>Onde estamos vs. onde precisamos estar</span><small>resultado, não desenho</small></h2>
+<p>Descreve uma <b>propriedade desejada</b> — o ciclo mensal acontece sozinho e cada linha tem veredito — não como construir isso.</p>
+<svg viewBox="0 0 720 170" width="100%"><g font-family="Inter,Arial">
+<text x="10" y="14" fill="#b8483d" font-size="10" font-weight="700" letter-spacing="1">HOJE — CICLO MANUAL, SEM VEREDITO</text>
+<rect x="10" y="24" width="320" height="120" rx="10" fill="#f6e3e1" stroke="#e3b7b1"/>
+<g font-size="10" fill="#6b3a35"><text x="28" y="52">① alguém percebe que saiu mês novo</text><text x="28" y="74">② baixa arquivo por arquivo (e recomeça se cair)</text><text x="28" y="96">③ carrega tudo, do jeito que veio</text><text x="28" y="118">④ defeito aparece — se aparecer — no relatório</text></g>
+<text x="360" y="90" font-size="22" fill="#9aa5b1">→</text>
+<text x="400" y="14" fill="#237a60" font-size="10" font-weight="700" letter-spacing="1">ALVO — CICLO AUTOMÁTICO, 100% VERIFICADO</text>
+<rect x="400" y="24" width="310" height="120" rx="10" fill="#e3f1ec" stroke="#b5d8cb"/>
+<g font-size="10" fill="#1f4f40"><text x="418" y="52">① nova publicação detectada sozinha</text><text x="418" y="74">② arquivos completos e íntegros, ou alerta</text><text x="418" y="96">③ cada linha: aceita ou em quarentena com motivo</text><text x="418" y="118">④ mês comparado ao anterior; histórico guardado</text></g>
+</g></svg>
+<div class="fig">Fig. 2 — A mudança é conceitual: de "carregado" para "verificado". O "como" fica para o Passo 2.</div>
+
+<h2 class="pb"><span><span class="num">04</span>O que este problema é — e não é</span><small>fronteira de escopo</small></h2>
+<div class="scope">
+<div class="in"><h4>✓ No escopo — o que resolvemos agora (v1)</h4><ul>
+<li>Processar 100% dos arquivos da <b>última competência publicada</b>, sem intervenção</li>
+<li>Dar veredito a 100% das linhas: aceita, ou em quarentena com o motivo</li>
+<li>Suportar o CNPJ alfanumérico em todo o ciclo</li>
+<li>Avisar quando a fonte falha: arquivo ausente, corrompido, layout novo, queda de volume</li>
+<li>Comparar cada mês com o anterior e guardar <b>12 meses de histórico</b></li>
+<li>Entregar ficha por CNPJ, quadro societário, rede entre empresas e listas de prospecção</li>
+</ul></div>
+<div class="out"><h4>× Fora do escopo — problemas separados</h4><ul>
+<li>Consulta em linguagem natural<small>experiência de consumo — fase 2, depois da fundação provada</small></li>
+<li>Diagnóstico autônomo de incidentes por agentes<small>automação de operação com risco próprio — fase 2</small></li>
+<li>Histórico linha a linha com vigência (por CNPJ/sócio)<small>v1 guarda fotos mensais; vigência é evolução futura</small></li>
+<li>Enriquecimento com outras fontes (endereço, faturamento)</li>
+<li>Programa de privacidade/LGPD<small>contatos seguem como a Receita publica; risco aceito (seção 07)</small></li>
+<li>Qualquer escolha de tecnologia — isso é o Passo 2</li>
+</ul></div></div>
+
+<h2><span><span class="num">05</span>O que "pronto" precisa provar</span><small>aceite verificável</small></h2>
+<p>Cada critério é um teste de passa/não passa ligado a um KPI do BRD. "Pronto" não é "parece funcionar": é esta medição, feita desta forma.</p>
+<table><tr><th>ID</th><th>Critério de aceite (verificável)</th><th>Como verificamos</th><th>KPI que prova</th></tr>
+<tr><td><b class="id">AC-1</b></td><td><b>Completude.</b> Os 37 arquivos da competência são processados; linhas lidas = linhas publicadas, com erro de leitura ≤ 0,001%.</td><td>Registro de carga por arquivo, comparado ao arquivo publicado.</td><td>Competências completas<br><span class="bad">não medido</span> → <span class="good">100%</span></td></tr>
+<tr><td><b class="id">AC-2</b></td><td><b>Tempo de processamento.</b> Com os arquivos já locais, a competência fica utilizável em ≤ 4 h no hardware de referência.</td><td>Duração registrada do ciclo, da carga ao consumo.</td><td>Tempo de processamento<br><span class="bad">indefinido</span> → <span class="good">≤ 4 h</span></td></tr>
+<tr><td><b class="id">AC-3</b></td><td><b>Frescor.</b> Da detecção de nova publicação até o dado utilizável: ≤ 24 h.</td><td>Hora de detecção vs. hora de conclusão, por competência.</td><td>Frescor<br><span class="bad">indefinido</span> → <span class="good">≤ 24 h</span></td></tr>
+<tr><td><b class="id">AC-4</b></td><td><b>Veredito total.</b> 100% das linhas classificadas; nenhuma linha em quarentena chega às tabelas de consumo.</td><td>Contagem aceitas + quarentena = lidas; verificação de vazamento.</td><td>Linhas verificadas<br><span class="bad">0%</span> → <span class="good">100%</span></td></tr>
+<tr><td><b class="id">AC-5</b></td><td><b>Consulta.</b> Consultas agregadas de prospecção e resumo respondem em p95 ≤ 5 s.</td><td>Bateria de consultas padrão, cronometrada.</td><td>Latência p95<br><span class="bad">não medido</span> → <span class="good">≤ 5 s</span></td></tr>
+<tr><td><b class="id">AC-6</b></td><td><b>Reprocessável.</b> Reprocessar a mesma competência produz exatamente as mesmas contagens.</td><td>Duas execuções, métricas comparadas.</td><td>Confiabilidade<br><span class="bad">—</span> → <span class="good">idêntico</span></td></tr>
+<tr><td><b class="id">AC-7</b></td><td><b>Alerta da fonte.</b> Arquivo ausente, corrompido, mudança de layout e queda de volume viram alerta registrado em 100% dos casos simulados.</td><td>Falhas simuladas contra uma cópia da competência.</td><td>Falhas descobertas tarde<br><span class="bad">comum</span> → <span class="good">0</span></td></tr>
+<tr><td><b class="id">AC-8</b></td><td><b>Histórico.</b> As últimas 12 competências ficam consultáveis e comparáveis.</td><td>Consulta a uma competência antiga e diferença entre duas.</td><td>Meses consultáveis<br><span class="bad">1</span> → <span class="good">12</span></td></tr>
+</table>
+<p><b>AC-1 é o go/no-go.</b> Sem completude provada com uma competência real, nada acima dela é confiável.</p>
+
+<h2><span><span class="num">06</span>Métricas de sucesso</span><small>atual → alvo</small></h2>
+<table><tr><th>Métrica</th><th>Atual</th><th>Alvo (mês 3)</th><th>Fonte (BRD)</th></tr>
+<tr><td>Competências processadas sem intervenção</td><td>0</td><td>≥ 90%</td><td>KPI 8.2</td></tr>
+<tr><td>Tempo da detecção à base utilizável</td><td>indefinido</td><td>≤ 24 h</td><td>BR-001</td></tr>
+<tr><td>Linhas com veredito de qualidade</td><td>0%</td><td>100%</td><td>BR-007</td></tr>
+<tr><td>Oscilação da taxa de quarentena mês a mês</td><td>não medida</td><td>± 0,1 p.p.</td><td>KPI 8.2</td></tr>
+</table>
+
+<h2><span><span class="num">07</span>Interrogatório do Passo 1 e premissas abertas</span><small>decidido em 11/09/2026</small></h2>
+<div class="q"><b>1 · Histórico.</b> KYC e crédito precisam ver mudanças. <i>Default proposto:</i> guardar foto mensal compacta, 12 meses. <b>Decisão:</b> aceito — 12 meses de histórico (AC-8). Dono: Bruno (produto).</div>
+<div class="q"><b>2 · Contato de pessoa física na prospecção.</b> MEI e empresário individual são pessoas físicas. <i>Default proposto:</i> omitir contato deles nas listas. <b>Decisão:</b> manter os contatos como a Receita publica. Registrado como <b>risco aceito</b> (LGPD) — dono: Bruno; revisar se o uso deixar de ser pessoal.</div>
+<div class="q"><b>3 · Escopo da consulta em linguagem natural e dos agentes.</b> <i>Default proposto:</i> no v1, atrás do portão AC-1. <b>Decisão:</b> fora do v1 — fase 2, depois da fundação provada.</div>
+<table><tr><th>ID</th><th>Premissa</th><th>Se estiver errada</th></tr>
+<tr><td>P-01</td><td>A Receita segue publicando uma pasta por mês no repositório atual.</td><td>O ciclo para; o alerta da fonte (AC-7) precisa avisar.</td></tr>
+<tr><td>P-02</td><td>Uma competência cabe no hardware de referência (16–32 GB, SSD).</td><td>AC-2 falha; revisar hardware.</td></tr>
+<tr><td>P-03</td><td>O layout segue o documento oficial de metadados.</td><td>AC-7 dispara; ajuste em um único lugar.</td></tr>
+<tr><td>P-04</td><td>Uso pessoal/portfólio, sem compartilhamento de listas com terceiros.</td><td>Reabrir a decisão 2 (LGPD).</td></tr>
+</table>
+</body></html>

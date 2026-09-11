@@ -1,0 +1,54 @@
+# Cadeia: investigação (A2, A3, síntese) -> resolução (A4, A5).
+# synthesize_diagnosis_task é a entrega pontuada (output_pydantic=Diagnosis).
+
+analyze_pipeline_logs_task:
+  description: >
+    Competência em análise: {competencia}. Procure evidência de falha de PIPELINE com
+    read_pipeline_logs (linhas PIPELINE_FAILURE) e read_dbt_run_results. Falhas possíveis:
+    missing_file, corrupt_zip, layout_drift. Se os logs estiverem limpos, diga isso claramente:
+    o incidente pode ser defeito de dado, não de pipeline.
+  expected_output: >
+    Relatório curto: arquivo e erro, se houver, e o failure_key de pipeline indicado — ou
+    "nenhuma falha de pipeline encontrada".
+  agent: log_analyst
+
+profile_warehouse_task:
+  description: >
+    Competência em análise: {competencia}. Confirme defeitos de DADO: use profile_rejects
+    (quarentena por reject_rule e flags de órfão) e read_quality_metrics (comparação com a
+    competência anterior e incidentes abertos pelos monitores). Informe cada failure_key com
+    contagem diferente de zero, a contagem e a superfície EXATA (ex.: silver_socios_rejects,
+    ops.dq_metrics, silver_estabelecimentos._orphan_cnae).
+  expected_output: >
+    Relatório de perfilamento: failure_key(s) detectados, contagens e superfícies — ou
+    "nenhum defeito de dado encontrado".
+  agent: data_profiler
+
+synthesize_diagnosis_task:
+  description: >
+    Pese os achados do Log Analyst e do Data Profiler para a competência {competencia} e decida a
+    causa raiz. Emita UM Diagnosis: failure_key (a melhor chave), evidence_surface (onde foi
+    provado), confidence (0.0-1.0) e summary (uma linha). Se houver DUAS OU MAIS falhas
+    independentes, use failure_key = "multi_failure_cascade" e liste os membros em sub_failures.
+    Chaves válidas: {chaves_validas}. Não invente falha sem evidência.
+  expected_output: >
+    Um Diagnosis com failure_key, sub_failures (só em cascata), evidence_surface, confidence e summary.
+
+propose_fix_task:
+  description: >
+    Com o Diagnosis confirmado, redija a correção PROPOSTA para a causa raiz e grave com
+    propose_patch. Ela é consultiva e nunca aplicada automaticamente. Se a correção for destrutiva
+    (apagar duplicados, reprocessar competência), a tarefa pausa para aprovação humana.
+  expected_output: >
+    O caminho do patch proposto gravado e uma linha dizendo o que ele muda.
+  agent: data_engineer
+
+write_postmortem_task:
+  description: >
+    Escreva o post-mortem do incidente da competência {competencia}. Primeiro use
+    query_incident_history para ver se é reincidente; depois grave com write_postmortem.
+    Produza um Postmortem tipado (incident_key, root_cause, evidence, proposed_fix,
+    recurrence_note). Nunca cole texto corrompido: resuma.
+  expected_output: >
+    Um Postmortem tipado e o caminho do markdown gravado.
+  agent: incident_commander

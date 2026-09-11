@@ -1,0 +1,192 @@
+# Plataforma DataOps do CNPJ — tudo on-premises.
+#
+#   docker compose up -d --build          # sobe Postgres + Airflow + Sentinel + MCP
+#   docker compose --profile ollama up -d # (opcional) LLM local no lugar da OpenAI
+#
+# Airflow:  http://localhost:8080   (usuário/senha do .env)
+# MCP:      http://localhost:8000/mcp
+#
+# Volume de dados: por padrão um volume nomeado (rápido no Docker Desktop/WSL2).
+# Para ver os arquivos no Windows, troque CNPJ_DATA no .env por um caminho, ex.: D:/cnpj-data
+
+name: receita-cnpj
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  image: receita-cnpj/airflow:3.3.1
+  env_file: [.env]
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__PARALLELISM: "4"
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
+    AIRFLOW__API_AUTH__JWT_ISSUER: receita-cnpj
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    DATA_DIR: /data
+    PG_HOST: postgres
+    DBT_TARGET_PATH: /data/dbt/target
+    DBT_LOG_PATH: /data/dbt/logs
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./pipeline:/opt/airflow/project/pipeline:ro
+    - ./transform:/opt/airflow/project/transform
+    - airflow-logs:/opt/airflow/logs
+    - ${CNPJ_DATA:-cnpj_data}:/data
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-depends
+    postgres:
+      condition: service_healthy
+
+x-app-common: &app-common
+  build:
+    context: .
+    dockerfile: docker/app/Dockerfile
+  image: receita-cnpj/app:0.1
+  env_file: [.env]
+  # mesmo usuário do Airflow: os dois lados leem e escrevem no volume /data
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment:
+    DATA_DIR: /data
+    PG_HOST: postgres
+    DBT_TARGET_PATH: /data/dbt/target
+    HOME: /tmp
+  volumes:
+    - ./pipeline:/app/pipeline:ro
+    - ./chaos:/app/chaos:ro
+    - ./sentinel:/app/sentinel:ro
+    - ./intelligence:/app/intelligence:ro
+    - ${CNPJ_DATA:-cnpj_data}:/data
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      POSTGRES_DB: postgres
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      PG_USER: ${PG_USER}
+      PG_PASSWORD: ${PG_PASSWORD}
+      PG_DB: ${PG_DB}
+    ports:
+      - "${PG_PORT_HOST:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/01-init.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    user: "0:0"
+    command:
+      - -c
+      - |
+        set -e
+        mkdir -p /data/landing /data/work /data/warehouse /data/logs /data/dbt /data/sentinel /opt/airflow/logs
+        chown -R "${AIRFLOW_UID:-50000}:0" /data /opt/airflow/logs
+        /entrypoint airflow version
+    environment:
+      <<: *airflow-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+
+  airflow-setup:
+    # roda como usuário airflow depois da migração: pool do DuckDB + schema ops
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        airflow pools set duckdb_writer 1 "DuckDB aceita um unico processo escritor"
+        python -c "from pipeline.ops import ensure_schema; ensure_schema(); print('schema ops ok')"
+    depends_on:
+      <<: *airflow-depends
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      <<: *airflow-depends
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      <<: *airflow-depends
+      airflow-setup:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends
+      airflow-init:
+        condition: service_completed_successfully
+
+  sentinel:
+    <<: *app-common
+    command: ["python", "-m", "sentinel.trigger", "--watch", "--intervalo", "60"]
+    restart: unless-stopped
+
+  mcp:
+    <<: *app-common
+    command: ["python", "-m", "intelligence.server", "--http"]
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+
+volumes:
+  pgdata:
+  cnpj_data:
+  airflow-logs:
+  ollama:

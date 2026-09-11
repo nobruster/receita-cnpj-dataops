@@ -1,0 +1,32 @@
+name: receita_cnpj
+version: "0.1.0"
+config-version: 2
+profile: receita_cnpj
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  competencia: "0000-00"   # injetado pelo Dagster: --vars '{competencia: 2026-08}'
+
+models:
+  receita_cnpj:
+    bronze:
+      +schema: bronze
+      +materialized: view
+    silver:
+      +schema: silver
+      +materialized: table
+    gold:
+      +schema: gold
+      +materialized: table
+
+seeds:
+  receita_cnpj:
+    +schema: ref
+    +column_types:
+      codigo: varchar

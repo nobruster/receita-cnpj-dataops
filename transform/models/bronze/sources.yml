@@ -1,0 +1,27 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: Espelho 1:1 dos CSVs da Receita (tudo VARCHAR), uma competência por vez. Escrito pela carga do Airflow.
+    tables:
+      - name: raw_empresas
+        description: "Empresas0..9.zip"
+      - name: raw_estabelecimentos
+        description: "Estabelecimentos0..9.zip"
+      - name: raw_socios
+        description: "Socios0..9.zip"
+      - name: raw_simples
+        description: "Simples.zip"
+      - name: raw_cnaes
+        description: "Cnaes.zip"
+      - name: raw_motivos
+        description: "Motivos.zip"
+      - name: raw_municipios
+        description: "Municipios.zip"
+      - name: raw_naturezas
+        description: "Naturezas.zip"
+      - name: raw_paises
+        description: "Paises.zip"
+      - name: raw_qualificacoes
+        description: "Qualificacoes.zip"

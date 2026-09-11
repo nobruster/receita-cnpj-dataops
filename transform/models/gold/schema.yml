@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: gold_empresa_detalhe
+    description: Ficha por estabelecimento (crédito/risco e prospecção).
+    columns:
+      - name: cnpj
+        data_tests: [unique, not_null]
+  - name: gold_socios_detalhe
+    description: Quadro societário com descrições (KYC).
+  - name: gold_rede_societaria
+    description: Arestas empresa sócia -> empresa investida (KYC/PLD).
+  - name: gold_cnae_secundaria
+    description: Estabelecimento x CNAE secundário.
+  - name: gold_painel_prospeccao
+    description: Agregado de ativos por UF/município/CNAE/porte/Simples/MEI.
+  - name: gold_resumo_competencia
+    description: Placar da competência.

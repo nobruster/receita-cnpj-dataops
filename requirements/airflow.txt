@@ -1,0 +1,5 @@
+# Dependências do pipeline dentro da imagem do Airflow (instaladas COM as constraints do Airflow 3.3.1)
+duckdb==1.5.5
+psycopg[binary]==3.3.4
+pydantic-settings==2.15.0
+httpx==0.28.1

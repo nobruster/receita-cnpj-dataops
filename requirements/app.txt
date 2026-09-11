@@ -1,0 +1,7 @@
+# Imagem do Sentinel (CrewAI) + servidor MCP + CLI do chaos
+crewai==1.15.21
+mcp==1.28.1
+duckdb==1.5.5
+psycopg[binary]==3.3.5
+pydantic-settings==2.15.0
+httpx==0.28.1
