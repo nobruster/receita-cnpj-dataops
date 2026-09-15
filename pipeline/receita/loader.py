@@ -169,6 +169,9 @@ def load_csv(
         f"INSERT INTO {RAW}.raw_load_log VALUES (?, ?, ?, ?, ?, ?, ?, now())",
         [competencia, fl.entidade, fl.arquivo, fl.linhas, fl.erros_parse, fl.bytes_csv, fl.segundos],
     )
+    # Descarrega o WAL a cada arquivo: em máquina apertada (Docker Desktop com poucos GB),
+    # 37 arquivos numa transação só fazem o WAL crescer e o container morrer por memória.
+    con.execute("CHECKPOINT")
     return fl
 
 

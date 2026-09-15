@@ -36,11 +36,13 @@ switch ($Comando) {
     "up" {
         if (-not (Test-Path .env)) { Copy-Item .env.example .env; Write-Host "Criei o .env a partir do .env.example. Edite as senhas e rode de novo." -ForegroundColor Yellow; exit 1 }
         docker compose up -d --build
-        Write-Host "`nAirflow: http://localhost:8080" -ForegroundColor Green
+        $porta = Get-EnvValue "AIRFLOW_PORT_HOST" "8080"
+        Write-Host "`nAirflow: http://localhost:$porta" -ForegroundColor Green
     }
     "fase2" {
         docker compose --profile fase2 up -d --build
-        Write-Host "`nSentinel ativo  |  MCP: http://localhost:8000/mcp" -ForegroundColor Green
+        $porta = Get-EnvValue "AIRFLOW_PORT_HOST" "8080"
+        Write-Host "`nSentinel ativo  |  Airflow: http://localhost:$porta  |  MCP: http://localhost:8000/mcp" -ForegroundColor Green
     }
     "down"   { docker compose down }
     "status" {
@@ -59,7 +61,7 @@ switch ($Comando) {
         } else {
             docker compose exec airflow-apiserver airflow dags trigger receita_cnpj_mensal
         }
-        Write-Host "Acompanhe em http://localhost:8080" -ForegroundColor Green
+        Write-Host ("Acompanhe em http://localhost:" + (Get-EnvValue "AIRFLOW_PORT_HOST" "8080")) -ForegroundColor Green
     }
     "amostra" {
         if (-not $Arg1) { throw "informe a competência: .\cnpj.ps1 amostra 2026-08" }

@@ -4,7 +4,7 @@
 #   docker compose --profile fase2 up -d --build  # + Sentinel (CrewAI) e MCP — fase 2 (ADR-0003)
 #   docker compose --profile ollama up -d         # (opcional) LLM local no lugar da OpenAI
 #
-# Airflow:  http://localhost:8080   (usuário/senha do .env)
+# Airflow:  http://localhost:8080   (usuário/senha do .env; AIRFLOW_PORT_HOST muda a porta)
 # MCP:      http://localhost:8000/mcp  (fase 2)
 #
 # Volume de dados: por padrão um volume nomeado (rápido no Docker Desktop/WSL2).
@@ -130,7 +130,7 @@ services:
     command: api-server
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${AIRFLOW_PORT_HOST:-8080}:8080"   # porta do host configurável (8080 pode estar ocupada)
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
       interval: 30s
