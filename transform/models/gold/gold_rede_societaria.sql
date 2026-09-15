@@ -1,6 +1,8 @@
 {#
   Rede PJ -> PJ (KYC/PLD): empresa sócia (identificador_socio = 1) -> empresa investida.
-  Para sócio PJ a Receita publica o CNPJ completo (14 posições) em cnpj_cpf_socio.
+  Para sócio PJ a Receita publica a RAIZ (8 posições) em cnpj_cpf_socio — competências
+  antigas traziam o CNPJ completo (14), então as duas formas são aceitas. O elo com a
+  empresa sócia é sempre pela raiz (primeiras 8 posições).
 #}
 select
     upper(s.cnpj_cpf_socio)                       as cnpj_socio,
@@ -17,4 +19,5 @@ left join {{ ref('silver_empresas') }}          es on es.cnpj_basico = upper(sub
 left join {{ ref('silver_empresas') }}          ei on ei.cnpj_basico = s.cnpj_basico
 left join {{ ref('silver_dom_qualificacoes') }} q  on q.codigo = s.qualificacao_socio
 where s.identificador_socio = '1'
-  and regexp_full_match(upper(s.cnpj_cpf_socio), '[0-9A-Z]{12}[0-9]{2}')
+  and (regexp_full_match(upper(s.cnpj_cpf_socio), '[0-9A-Z]{8}')
+       or regexp_full_match(upper(s.cnpj_cpf_socio), '[0-9A-Z]{12}[0-9]{2}'))
