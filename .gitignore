@@ -1,5 +1,6 @@
-.env
-.env.test
+# segredos: nenhum .env vai para o git, so o modelo
+.env*
+!.env.example
 .venv/
 __pycache__/
 *.pyc
