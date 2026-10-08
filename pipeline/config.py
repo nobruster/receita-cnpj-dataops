@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # --- Fonte: Nextcloud da Receita Federal (WebDAV público) -----------------
     rfb_webdav_url: str = "https://arquivos.receitafederal.gov.br/public.php/webdav"
-    rfb_share_token: str = "<RFB_SHARE_TOKEN>"
+    rfb_share_token: str = ""  # obrigatório no .env (token do link público da Receita); nunca no código
     rfb_verify_ssl: bool = True
     rfb_ca_bundle: str | None = None  # CA corporativa (proxy com inspeção TLS)
     rfb_connect_timeout: float = 30.0
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     pg_port: int = 5432
     pg_db: str = "cnpj"
     pg_user: str = "cnpj"
-    pg_password: str = ""
+    pg_password: str = ""  # obrigatório no .env; nunca no código
     publish_schema: str = "gold"
     publish_enabled: bool = True
     # Tabelas gold copiadas para o Postgres. gold_empresa_detalhe (dezenas de

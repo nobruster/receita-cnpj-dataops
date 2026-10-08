@@ -55,6 +55,8 @@ class RemoteFile:
 
 
 def _client(settings: Settings) -> httpx.Client:
+    if not settings.rfb_share_token:
+        raise RuntimeError("RFB_SHARE_TOKEN não definido: copie do link público da Receita para o .env")
     verify: bool | str = settings.rfb_ca_bundle or settings.rfb_verify_ssl
     return httpx.Client(
         auth=(settings.rfb_share_token, ""),
