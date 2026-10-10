@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     pg_db: str = "cnpj"
     pg_user: str = "cnpj"
     pg_password: str = ""  # obrigatório no .env; nunca no código
+    # Papel publisher (publicação BI): conexão separada do usuário cnpj.
+    publisher_user: str = "publisher"
+    publisher_password: str = ""  # obrigatório no .env; nunca no código
     publish_schema: str = "gold"
     publish_enabled: bool = True
     # Tabelas gold copiadas para o Postgres. gold_empresa_detalhe (dezenas de
@@ -90,6 +93,13 @@ class Settings(BaseSettings):
         return (
             f"host={self.pg_host} port={self.pg_port} dbname={self.pg_db} "
             f"user={self.pg_user} password={self.pg_password}"
+        )
+
+    @property
+    def publisher_dsn(self) -> str:
+        return (
+            f"host={self.pg_host} port={self.pg_port} dbname={self.pg_db} "
+            f"user={self.publisher_user} password={self.publisher_password}"
         )
 
     def ensure_dirs(self) -> None:
