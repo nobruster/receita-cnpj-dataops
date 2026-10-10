@@ -53,3 +53,68 @@ def pg(data_dir: Path):
     with ops.session() as conn:
         conn.execute("TRUNCATE ops.incidents, ops.dq_metrics, ops.competencias, ops.diagnoses RESTART IDENTITY")
     return True
+
+
+# --- Postgres real para papéis/DDL (T-003) -------------------------------------------------
+# Container descartável só em loopback. Estas fixtures FALHAM (pytest.fail) sem banco:
+# um skip daria falso verde, porque o pytest sai com 0.
+
+DDL_PATH = ROOT / "sql" / "001_schemas_roles.sql"
+BI_READER_PASSWORD = os.environ.get("BI_READER_PASSWORD", "test-reader")
+PUBLISHER_PASSWORD = os.environ.get("PUBLISHER_PASSWORD", "test-publisher")
+
+
+def _pg_conninfo(user: str, password: str) -> str:
+    host = os.environ.get("PG_HOST", "127.0.0.1")
+    port = os.environ.get("PG_PORT", "5434")
+    db = os.environ.get("PG_DB", "postgres")
+    return f"host={host} port={port} dbname={db} user={user} password={password}"
+
+
+def _connect_or_fail(user: str, password: str) -> psycopg.Connection:
+    try:
+        return psycopg.connect(_pg_conninfo(user, password), connect_timeout=3, autocommit=True)
+    except Exception as exc:
+        pytest.fail(
+            f"PostgreSQL não respondeu como '{user}' em "
+            f"{os.environ.get('PG_HOST', '127.0.0.1')}:{os.environ.get('PG_PORT', '5434')}: {exc}. "
+            "Suba o container de teste (loopback, porta 5434) ou ajuste PG_HOST/PG_PORT/PG_DB.",
+            pytrace=False,
+        )
+
+
+def apply_ddl(conn: psycopg.Connection) -> None:
+    """Aplica sql/001_schemas_roles.sql sem o psql: troca os meta-comandos por parâmetros."""
+    conn.execute("SELECT set_config('bi.reader_password', %s, false)", (BI_READER_PASSWORD,))
+    conn.execute("SELECT set_config('bi.publisher_password', %s, false)", (PUBLISHER_PASSWORD,))
+    lines = DDL_PATH.read_text(encoding="utf-8").splitlines()
+    body = [ln for ln in lines if not ln.startswith("\\") and "set_config('bi." not in ln]
+    conn.execute("\n".join(body))
+
+
+@pytest.fixture(scope="session")
+def pg_admin():
+    admin_user = os.environ.get("PG_ADMIN_USER", "postgres")
+    conn = _connect_or_fail(admin_user, os.environ.get("PG_ADMIN_PASSWORD", ""))
+    yield conn
+    conn.close()
+
+
+@pytest.fixture(scope="session")
+def pg_ddl(pg_admin):
+    apply_ddl(pg_admin)
+    return True
+
+
+@pytest.fixture
+def pg_publisher(pg_ddl):
+    conn = _connect_or_fail("publisher", PUBLISHER_PASSWORD)
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def pg_bi_reader(pg_ddl):
+    conn = _connect_or_fail("bi_reader", BI_READER_PASSWORD)
+    yield conn
+    conn.close()
