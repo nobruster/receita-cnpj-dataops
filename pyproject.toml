@@ -23,6 +23,7 @@ package = false
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = ["docker: exige um PostgreSQL real em container descartável (falha, não pula, sem banco)"]
 
 [tool.ruff]
 line-length = 120
