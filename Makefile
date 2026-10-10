@@ -1,6 +1,6 @@
 # Atalhos para Linux/WSL (no Windows puro use .\cnpj.ps1 — mesmos comandos).
 .DEFAULT_GOAL := help
-.PHONY: help up fase2 down status logs rodar amostra injetar falhas sentinel evals test lint
+.PHONY: help up fase2 down status logs rodar amostra injetar falhas sentinel evals test lint bi-ddl
 
 COMP ?= $(shell date +%Y-%m)
 PG_USER ?= $(shell grep -E '^PG_USER=' .env 2>/dev/null | cut -d= -f2)
@@ -35,3 +35,8 @@ test: ## Testes (precisa de Postgres: PG_HOST/PG_USER/PG_PASSWORD/PG_DB)
 	uv run pytest -q
 lint: ## Ruff
 	uv run ruff check .
+bi-ddl: ## Aplica sql/001_schemas_roles.sql com o admin (BI_READER_PASSWORD/PUBLISHER_PASSWORD do .env)
+	docker compose exec -T postgres psql -U $(or $(PG_ADMIN_USER),postgres) -d $(or $(PG_DB),cnpj) \
+		-v bi_reader_password="$(or $(BI_READER_PASSWORD),$(shell grep -E '^BI_READER_PASSWORD=' .env 2>/dev/null | cut -d= -f2))" \
+		-v publisher_password="$(or $(PUBLISHER_PASSWORD),$(shell grep -E '^PUBLISHER_PASSWORD=' .env 2>/dev/null | cut -d= -f2))" \
+		< sql/001_schemas_roles.sql
