@@ -1,0 +1,21 @@
+{
+  "versao": 1,
+  "template": true,
+  "esquema_hash": "",
+  "assinatura": {"por": "", "em": ""},
+  "classes": ["identificador direto", "quase-identificador", "agregado", "sensível (art. 11)"],
+  "tabelas": {},
+  "excluidas": {
+    "gold_resumo_competencia": {
+      "modo": "delete_copy_legado",
+      "motivo": "histórico completo no DuckDB não foi confirmado; fica fora do DROP/RENAME e mantém DELETE + COPY do publish.py, sem allowlist nem k = 5",
+      "colunas": []
+    }
+  },
+  "nao_publicar": {
+    "razao_social": {
+      "publicar": false,
+      "motivo": "guarda k=5 e LGPD (decisão do Bruno, 2026-10-10, opção a)"
+    }
+  }
+}
