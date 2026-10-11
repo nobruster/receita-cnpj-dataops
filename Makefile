@@ -40,3 +40,4 @@ bi-ddl: ## Aplica sql/001_schemas_roles.sql com o admin (BI_READER_PASSWORD/PUBL
 		-v bi_reader_password="$(or $(BI_READER_PASSWORD),$(shell grep -E '^BI_READER_PASSWORD=' .env 2>/dev/null | cut -d= -f2))" \
 		-v publisher_password="$(or $(PUBLISHER_PASSWORD),$(shell grep -E '^PUBLISHER_PASSWORD=' .env 2>/dev/null | cut -d= -f2))" \
 		< sql/001_schemas_roles.sql
+	docker compose exec -T postgres psql -U $(or $(PG_ADMIN_USER),postgres) -d $(or $(PG_DB),cnpj) < sql/002_ops_runs.sql

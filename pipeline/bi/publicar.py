@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections.abc import Callable
 
 import duckdb
 import psycopg
 
-from pipeline.bi import guarda
+from pipeline.bi import guarda, runs
 from pipeline.bi.allowlist import ALLOWLIST, colunas_aprovadas
 from pipeline.config import Settings, get_settings
 from pipeline.publish import HISTORY_TABLES, INDEXES, _pg_type
@@ -46,6 +47,7 @@ def publicar_tabela(
     settings: Settings | None = None,
     lock_timeout: str = LOCK_TIMEOUT,
     antes_do_rename: Callable[[], None] | None = None,
+    run_id: str | None = None,
 ) -> int:
     """Publica ``gold.<tabela>`` e devolve a contagem de linhas publicadas."""
     if tabela in HISTORY_TABLES:  # recusa antes de qualquer DDL
@@ -64,6 +66,8 @@ def publicar_tabela(
 
     declaradas, quase_ids = guarda.quase_identificadores(tabela, _caminho_allowlist())
     guarda.verificar(con, tabela, colunas, declaradas, quase_ids)  # aborta antes de qualquer escrita no Postgres
+    menor = runs.menor_n(con, tabela, [c for c in colunas if c in quase_ids])
+    inicio = time.monotonic()
 
     with psycopg.connect(s.publisher_dsn) as pg, pg.cursor() as cur:  # uma transação
         cur.execute(f"DROP TABLE IF EXISTS {novo}")
@@ -86,5 +90,9 @@ def publicar_tabela(
             antes_do_rename()
         cur.execute(f'ALTER TABLE {novo} RENAME TO "{tabela}"')
         cur.execute(f"GRANT SELECT ON {final} TO {LEITOR}")
+        runs.gravar(  # mesma transação do swap: rollback não deixa linha de sucesso
+            cur, tabela, obtido, int((time.monotonic() - inicio) * 1000), menor,
+            runs.hash_allowlist(_caminho_allowlist()), run_id,
+        )
     log.info("publicado %s.%s: %s linhas", schema, tabela, f"{obtido:,}")
     return obtido

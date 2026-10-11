@@ -103,6 +103,9 @@ def pg_admin():
 @pytest.fixture(scope="session")
 def pg_ddl(pg_admin):
     apply_ddl(pg_admin)
+    # T-010: publicar grava em ops.runs (sql/002); sem essa tabela o publicador falha
+    ops = Path(ROOT / "sql" / "002_ops_runs.sql").read_text(encoding="utf-8")
+    pg_admin.execute("\n".join(ln for ln in ops.splitlines() if not ln.startswith("\\")))
     return True
 
 
