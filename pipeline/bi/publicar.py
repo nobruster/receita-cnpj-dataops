@@ -12,6 +12,9 @@ import re
 import time
 from collections.abc import Callable
 
+import json
+from pathlib import Path
+
 import duckdb
 import psycopg
 
@@ -48,6 +51,7 @@ def publicar_tabela(
     lock_timeout: str = LOCK_TIMEOUT,
     antes_do_rename: Callable[[], None] | None = None,
     run_id: str | None = None,
+    caminho: Path | str | None = None,
 ) -> int:
     """Publica ``gold.<tabela>`` e devolve a contagem de linhas publicadas."""
     if tabela in HISTORY_TABLES:  # recusa antes de qualquer DDL
@@ -57,14 +61,18 @@ def publicar_tabela(
 
     s = settings or get_settings()
     schema = s.publish_schema
-    colunas = colunas_aprovadas(con, tabela)
+    if caminho is not None:
+        colunas = colunas_aprovadas(con, tabela, caminho)
+    else:
+        colunas = colunas_aprovadas(con, tabela)
+        caminho = _caminho_allowlist()
     esperado = con.execute(f"SELECT count(*) FROM gold.{tabela}").fetchone()[0]  # noqa: S608
     ddl = ", ".join(f'"{c}" {_pg_type(ty)}' for c, ty in _tipos(con, tabela, colunas))
     nomes = ", ".join(f'"{c}"' for c in colunas)
     novo = f'{schema}."{tabela}__novo"'
     final = f'{schema}."{tabela}"'
 
-    declaradas, quase_ids = guarda.quase_identificadores(tabela, _caminho_allowlist())
+    declaradas, quase_ids = guarda.quase_identificadores(tabela, caminho)
     guarda.verificar(con, tabela, colunas, declaradas, quase_ids)  # aborta antes de qualquer escrita no Postgres
     menor = runs.menor_n(con, tabela, [c for c in colunas if c in quase_ids])
     inicio = time.monotonic()
@@ -92,7 +100,45 @@ def publicar_tabela(
         cur.execute(f"GRANT SELECT ON {final} TO {LEITOR}")
         runs.gravar(  # mesma transação do swap: rollback não deixa linha de sucesso
             cur, tabela, obtido, int((time.monotonic() - inicio) * 1000), menor,
-            runs.hash_allowlist(_caminho_allowlist()), run_id,
+            runs.hash_allowlist(caminho), run_id,
         )
     log.info("publicado %s.%s: %s linhas", schema, tabela, f"{obtido:,}")
     return obtido
+
+
+def publicar_todas(
+    con: duckdb.DuckDBPyConnection,
+    settings: Settings | None = None,
+    caminho: Path | str = ALLOWLIST,
+    lock_timeout: str = LOCK_TIMEOUT,
+) -> dict[str, int]:
+    """Publica cada tabela aprovada da allowlist, uma transação por tabela.
+
+    Tabelas excluídas ficam fora (com log). Se uma falha, as demais seguem e o erro é levantado no
+    fim; as já trocadas permanecem publicadas.
+    """
+    try:
+        dados = json.loads(Path(caminho).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("allowlist ilegível") from exc
+
+    for nome in sorted(dados.get("excluidas") or {}):
+        log.info("tabela %s excluída da allowlist: fica fora da publicação", nome)
+
+    excluidas = set(dados.get("excluidas") or {})
+    publicadas: dict[str, int] = {}
+    falhas: dict[str, Exception] = {}
+    for tabela in sorted(t for t in (dados.get("tabelas") or {}) if t not in excluidas):
+        try:
+            publicadas[tabela] = publicar_tabela(
+                con, tabela, settings=settings, lock_timeout=lock_timeout, caminho=caminho
+            )
+        except Exception as exc:  # noqa: BLE001 - isola a falha por tabela
+            log.error("falha ao publicar %s: %s", tabela, type(exc).__name__)
+            falhas[tabela] = exc
+    if falhas:
+        raise RuntimeError(
+            f"falha em {len(falhas)} tabela(s): {', '.join(sorted(falhas))}; "
+            f"publicadas: {', '.join(sorted(publicadas)) or 'nenhuma'}"
+        ) from next(iter(falhas.values()))
+    return publicadas
