@@ -4,8 +4,8 @@
 
 \set ON_ERROR_STOP on
 
-SELECT set_config('bi.reader_password', :'bi_reader_password', false);
-SELECT set_config('bi.publisher_password', :'publisher_password', false);
+SELECT set_config('bi.reader_password', :'bi_reader_password', false) \gset
+SELECT set_config('bi.publisher_password', :'publisher_password', false) \gset
 
 -- Papeis sao do cluster: checa pg_roles antes de criar.
 DO $$
