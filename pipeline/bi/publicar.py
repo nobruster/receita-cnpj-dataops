@@ -14,7 +14,8 @@ from collections.abc import Callable
 import duckdb
 import psycopg
 
-from pipeline.bi.allowlist import colunas_aprovadas
+from pipeline.bi import guarda
+from pipeline.bi.allowlist import ALLOWLIST, colunas_aprovadas
 from pipeline.config import Settings, get_settings
 from pipeline.publish import HISTORY_TABLES, INDEXES, _pg_type
 
@@ -24,6 +25,11 @@ LOCK_TIMEOUT = "60s"
 LEITOR = "bi_reader"
 LOTE = 50_000
 _TIMEOUT_RE = re.compile(r"^\d+(ms|s|min)?$")
+
+
+def _caminho_allowlist():
+    """Allowlist usada por colunas_aprovadas (partial com ``caminho`` nos testes), senão a versionada."""
+    return getattr(colunas_aprovadas, "keywords", {}).get("caminho", ALLOWLIST)
 
 
 def _tipos(con: duckdb.DuckDBPyConnection, tabela: str, colunas: list[str]) -> list[tuple[str, str]]:
@@ -56,7 +62,8 @@ def publicar_tabela(
     novo = f'{schema}."{tabela}__novo"'
     final = f'{schema}."{tabela}"'
 
-    # GANCHO T-007: guarda LGPD (células com n < 5) entra aqui, antes de qualquer escrita no Postgres.
+    declaradas, quase_ids = guarda.quase_identificadores(tabela, _caminho_allowlist())
+    guarda.verificar(con, tabela, colunas, declaradas, quase_ids)  # aborta antes de qualquer escrita no Postgres
 
     with psycopg.connect(s.publisher_dsn) as pg, pg.cursor() as cur:  # uma transação
         cur.execute(f"DROP TABLE IF EXISTS {novo}")
